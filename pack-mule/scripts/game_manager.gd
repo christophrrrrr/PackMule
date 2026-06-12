@@ -134,7 +134,10 @@ func _place_object(entry: Dictionary, xform: Transform3D) -> void:
 	obj.transform = xform
 	add_child(obj)
 	obj.drop()
+	# Scoring runs once; the re-glue handler runs on every settle, because in
+	# Sticky mode pieces knocked loose by an impact settle (and re-glue) again.
 	obj.settled.connect(_on_object_settled.bind(obj), CONNECT_ONE_SHOT)
+	obj.settled.connect(_on_object_resettled.bind(obj))
 	obj.fell.connect(_on_object_fell.bind(obj))
 	_settling = obj
 	if _ghost != null:
@@ -144,19 +147,27 @@ func _place_object(entry: Dictionary, xform: Transform3D) -> void:
 	_hud.set_incoming("Settling...")
 
 
+## First settle of a placed object: score it and move the game along.
 func _on_object_settled(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
 		return
-	if _mode["freeze_settled"]:
-		obj.lock_in()
 	_settled.append(obj)
 	_score += SCORE_PER_OBJECT
 	if obj == _settling:
 		_settling = null
-	_recompute_tower_top()
-	_refresh_hud()
 	if _phase == Phase.SETTLING:
 		_spawn_next()
+
+
+## Every settle (including pieces that re-settle after glue broke):
+## glue down in Sticky mode and refresh the tower height.
+func _on_object_resettled(obj: StackableObject) -> void:
+	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
+		return
+	if _mode["freeze_settled"]:
+		obj.lock_in()
+	_recompute_tower_top()
+	_refresh_hud()
 
 
 func _on_object_fell(obj: StackableObject) -> void:

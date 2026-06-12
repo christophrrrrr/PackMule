@@ -15,16 +15,24 @@ const SETTLE_ANGULAR_SPEED := 0.4
 const SETTLE_STILL_TIME := 0.7
 const SETTLE_TIMEOUT := 6.0
 
+## How far the hull is shifted down when searching for supporting objects.
+const SUPPORT_PROBE := 0.05
+
 var state := State.HELD
 var display_name := ""
 var half_extents := Vector3.ONE * 0.5
 
 var _still_time := 0.0
 var _fall_time := 0.0
+var _speed_last_tick := 0.0
+var _break_momentum := 0.0       # glue strength from the mode; 0 = no glue logic
+var _supporters: Array[StackableObject] = []
+var _dependents: Array[StackableObject] = []
+var _hull := ConvexPolygonShape3D.new()
 
 
 ## `mode` is one of GameModes.MODES and supplies the physics feel
-## (friction, bounce, damping) for the active run.
+## (friction, bounce, damping, glue strength) for the active run.
 static func create(entry: Dictionary, mode: Dictionary) -> StackableObject:
 	var obj := StackableObject.new()
 	obj.display_name = entry["name"]
@@ -36,6 +44,12 @@ static func create(entry: Dictionary, mode: Dictionary) -> StackableObject:
 	mat.friction = mode["friction"]
 	mat.bounce = mode["bounce"]
 	obj.physics_material_override = mat
+	obj._break_momentum = mode["break_momentum"]
+	if mode["freeze_settled"]:
+		# Glued towers need impact reporting so hard hits can break the glue.
+		obj.contact_monitor = true
+		obj.max_contacts_reported = 8
+		obj.body_entered.connect(obj._on_body_entered)
 	obj._build_model(entry["path"], entry["size"])
 	obj._enter_held()
 	return obj
@@ -102,11 +116,65 @@ func drop() -> void:
 	_fall_time = 0.0
 
 
-## Sticky mode: lock a settled object in place so the tower below can
-## never wobble apart — it becomes part of the terrain.
+## Sticky mode: glue a settled object in place. The glue is breakable —
+## see break_loose(). Also records which settled objects this one rests
+## on, so a break below can wake everything stacked above it.
 func lock_in() -> void:
 	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	freeze = true
+	_register_supports()
+
+
+func is_glued() -> bool:
+	return freeze and state == State.SETTLED
+
+
+## Breaks the glue: this object becomes dynamic again and everything that
+## was resting on it is knocked loose too (chain reaction). A loose piece
+## that comes to rest settles and re-glues via the normal settle path.
+func break_loose() -> void:
+	if not is_glued():
+		return
+	for s in _supporters:
+		s._dependents.erase(self)
+	_supporters.clear()
+	var deps := _dependents.duplicate()
+	_dependents.clear()
+	state = State.FALLING
+	_still_time = 0.0
+	_fall_time = 0.0
+	freeze = false
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	for d in deps:
+		d.break_loose()
+
+
+## Finds the settled objects this one is resting on (hull shifted slightly
+## down) and registers itself as their dependent.
+func _register_supports() -> void:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _hull
+	query.transform = global_transform.translated(Vector3.DOWN * SUPPORT_PROBE)
+	query.collision_mask = 2
+	query.exclude = [get_rid()]
+	for hit in get_world_3d().direct_space_state.intersect_shape(query, 8):
+		var other := hit["collider"] as StackableObject
+		if other != null and other.is_glued() and other not in _supporters:
+			_supporters.append(other)
+			other._dependents.append(self)
+
+
+## A hard enough hit on a glued piece cracks its glue. Momentum of the
+## moving piece (mass * speed entering this tick) is the severity measure:
+## light objects can never break glue, heavy ones need real speed.
+func _on_body_entered(body: Node) -> void:
+	if _break_momentum <= 0.0 or state == State.HELD:
+		return
+	var other := body as StackableObject
+	if other != null and other.is_glued() \
+			and mass * _speed_last_tick >= _break_momentum:
+		other.break_loose()
 
 
 ## Called by the game manager when this body enters the kill zone.
@@ -127,6 +195,9 @@ func top_y() -> float:
 
 
 func _physics_process(delta: float) -> void:
+	# Speed entering this tick, captured before the solver runs: body_entered
+	# fires after collision response has already changed the velocity.
+	_speed_last_tick = 0.0 if freeze else linear_velocity.length()
 	if state != State.FALLING:
 		return
 	_fall_time += delta
@@ -143,10 +214,9 @@ func _build_model(path: String, target_size: float) -> void:
 	half_extents = build_normalized_model(self, path, target_size, hull_points)
 	if hull_points.is_empty():
 		return
-	var shape := ConvexPolygonShape3D.new()
-	shape.points = hull_points
+	_hull.points = hull_points
 	var col := CollisionShape3D.new()
-	col.shape = shape
+	col.shape = _hull
 	add_child(col)
 
 
