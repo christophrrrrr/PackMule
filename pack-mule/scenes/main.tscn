@@ -123,7 +123,7 @@ anchor_bottom = 1.0
 offset_top = -34.0
 offset_bottom = -8.0
 theme_override_font_sizes/font_size = 14
-text = "Fly: WASD + Mouse (Space/Ctrl = up/down, Shift = fast, Wheel = speed)   |   Q/E rotate, R tip   |   LMB place   |   Tab: spin wheel   |   F: use modifier   |   Esc: free cursor"
+text = "Fly: WASD + Mouse (Space/Ctrl = up/down, Shift = fast, Wheel = speed)   |   Q/E rotate, R tip   |   LMB place   |   Tab: spin wheel (applies to current object)   |   Esc: free cursor"
 horizontal_alignment = 1
 
 [node name="Crosshair" type="Label" parent="HUD"]
@@ -142,6 +142,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="WheelOverlay" type="Control" parent="HUD"]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0

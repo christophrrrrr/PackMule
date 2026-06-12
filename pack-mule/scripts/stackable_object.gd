@@ -150,9 +150,10 @@ func is_glued() -> bool:
 ## Knocks the piece loose: it becomes dynamic again and everything that was
 ## resting on it wakes too (chain reaction). A loose piece that comes to
 ## rest settles and re-glues via the normal settle path. Super Glue pieces
-## never break — they stay put even if their support vanishes.
-func break_loose() -> void:
-	if state != State.SETTLED or _super_glue:
+## resist impacts, but `force` (used when a piece is disconnected from the
+## tower — nothing may ever float) breaks even them.
+func break_loose(force := false) -> void:
+	if state != State.SETTLED or (_super_glue and not force):
 		return
 	for s in _supporters:
 		s._dependents.erase(self)
@@ -171,11 +172,35 @@ func break_loose() -> void:
 
 
 ## Called by the game manager when this body enters the kill zone.
+## Anything that was resting on this piece loses its support immediately.
 func mark_fallen() -> void:
 	if state == State.FALLEN:
 		return
 	state = State.FALLEN
+	for s in _supporters:
+		s._dependents.erase(self)
+	_supporters.clear()
+	var deps := _dependents.duplicate()
+	_dependents.clear()
+	for d: StackableObject in deps:
+		d.break_loose(true)
 	fell.emit()
+
+
+## Bodies (static world or other stackables) the hull is touching, found
+## with a small margin. Used by the integrity sweep: a glued piece that
+## touches nothing anchored must fall.
+func touching_bodies(space: PhysicsDirectSpaceState3D) -> Array:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _hull
+	query.transform = global_transform
+	query.margin = 0.06
+	query.collision_mask = 1 | 2
+	query.exclude = [get_rid()]
+	var bodies := []
+	for hit in space.intersect_shape(query, 12):
+		bodies.append(hit["collider"])
+	return bodies
 
 
 ## World-space Y of the highest point of this object's rotated bounding box.

@@ -12,6 +12,7 @@ const HEIGHT_SCORE_PER_METER := 10.0
 const AIM_RANGE := 200.0
 const YAW_SPEED := 2.6           # rad/s while holding Q/E
 const DONKEY_LENGTH := 3.0       # normalized donkey body length in meters
+const INTEGRITY_INTERVAL := 0.4  # seconds between floating-piece sweeps
 
 enum Phase { AIMING, SETTLING, GAME_OVER }
 
@@ -33,8 +34,8 @@ var _max_height := 0.0
 var _fall_times: Array[float] = []
 var _last_index := -1
 var _rng := RandomNumberGenerator.new()
-var _stored_mod: Dictionary = {} # modifier won on the wheel, waiting to be used
-var _mod_armed := false          # stored modifier applied to the current ghost
+var _pending_mod: Dictionary = {} # wheel result, locked onto the current object
+var _integrity_timer := 0.0
 
 
 func _ready() -> void:
@@ -57,23 +58,62 @@ func _process(delta: float) -> void:
 		_ghost.spin(-YAW_SPEED * delta)
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	_integrity_timer += delta
+	if _integrity_timer >= INTEGRITY_INTERVAL:
+		_integrity_timer = 0.0
+		_check_integrity()
 	if _phase != Phase.AIMING or _ghost == null:
 		return
 	_update_ghost()
 
 
+## Nothing may ever float: a glued piece only stays glued while an
+## unbroken chain of touching pieces connects it to the donkey (or any
+## static world). Everything else breaks loose and falls. No
+## center-of-mass math — the glue stays forgiving, contact is the rule.
+func _check_integrity() -> void:
+	var resting: Array[StackableObject] = []
+	for obj in _settled:
+		if obj.state == StackableObject.State.SETTLED:
+			resting.append(obj)
+	if resting.is_empty():
+		return
+	var space := get_world_3d().direct_space_state
+	var rooted := {}
+	var adjacent := {}
+	var queue: Array[StackableObject] = []
+	for obj in resting:
+		var neighbors: Array[StackableObject] = []
+		for body in obj.touching_bodies(space):
+			if body is StaticBody3D and not rooted.has(obj):
+				rooted[obj] = true
+				queue.append(obj)
+			elif body is StackableObject \
+					and (body as StackableObject).state == StackableObject.State.SETTLED:
+				neighbors.append(body)
+		adjacent[obj] = neighbors
+	while not queue.is_empty():
+		var obj: StackableObject = queue.pop_back()
+		for n: StackableObject in adjacent.get(obj, []):
+			if not rooted.has(n):
+				rooted[n] = true
+				queue.append(n)
+	for obj in resting:
+		if not rooted.has(obj):
+			obj.break_loose(true)
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		# Wheel and modifier keys work outside strict aiming, too.
-		if event.keycode == KEY_TAB:
-			if _phase != Phase.GAME_OVER and _stored_mod.is_empty() \
-					and not _hud.wheel_busy():
-				_hud.spin_wheel()
-			return
-		if event.keycode == KEY_F:
-			_toggle_modifier()
-			return
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_TAB:
+		# One spin per object: the wheel unlocks again once the modified
+		# object has been placed. Spinning while one settles is fine — the
+		# result lands on the next object.
+		if _phase != Phase.GAME_OVER and _pending_mod.is_empty() \
+				and not _hud.wheel_busy():
+			_hud.spin_wheel()
+		return
 	if _phase != Phase.AIMING or _ghost == null:
 		return
 	if event is InputEventMouseButton and event.pressed \
@@ -90,27 +130,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		_ghost.tip(axis, PI / 2.0)
 
 
+## The wheel result applies to the current object instantly (the ghost is
+## rebuilt at the modified size). If it lands while the previous object is
+## still settling, the next object spawns with it.
 func _on_wheel_landed(modifier: Dictionary) -> void:
-	_stored_mod = modifier
+	_pending_mod = modifier
+	if _phase == Phase.AIMING and _ghost != null:
+		var entry := _ghost.entry
+		var user_basis := _ghost.user_basis
+		_ghost.queue_free()
+		_ghost = GhostPreview.create(entry, _pending_mod)
+		_ghost.user_basis = user_basis
+		_ghost.visible = false
+		add_child(_ghost)
+		_refresh_incoming(entry)
 	_refresh_modifier_label()
-
-
-## F: applies the stored modifier to the object being aimed (the ghost is
-## rebuilt at the modified size); pressing F again takes it off. Placing
-## the object while armed consumes the modifier.
-func _toggle_modifier() -> void:
-	if _stored_mod.is_empty() or _phase != Phase.AIMING or _ghost == null:
-		return
-	_mod_armed = not _mod_armed
-	var entry := _ghost.entry
-	var user_basis := _ghost.user_basis
-	_ghost.queue_free()
-	_ghost = GhostPreview.create(entry, _stored_mod if _mod_armed else {})
-	_ghost.user_basis = user_basis
-	_ghost.visible = false
-	add_child(_ghost)
-	_refresh_modifier_label()
-	_refresh_incoming(entry)
 
 
 ## Casts the crosshair (or the cursor when freed with Esc) into the world
@@ -146,8 +180,7 @@ func _spawn_next() -> void:
 		idx = _rng.randi_range(0, ObjectCatalog.ENTRIES.size() - 1)
 	_last_index = idx
 	var entry: Dictionary = ObjectCatalog.ENTRIES[idx]
-	_mod_armed = false
-	_ghost = GhostPreview.create(entry)
+	_ghost = GhostPreview.create(entry, _pending_mod)
 	_ghost.visible = false  # hidden until the first aim raycast lands
 	add_child(_ghost)
 	_phase = Phase.AIMING
@@ -156,13 +189,12 @@ func _spawn_next() -> void:
 
 
 func _place_object(entry: Dictionary, xform: Transform3D) -> void:
-	var obj := StackableObject.create(entry, _stored_mod if _mod_armed else {})
+	var obj := StackableObject.create(entry, _pending_mod)
 	obj.transform = xform
 	add_child(obj)
 	obj.drop()
-	if _mod_armed:
-		_stored_mod = {}
-		_mod_armed = false
+	if not _pending_mod.is_empty():
+		_pending_mod = {}
 		_refresh_modifier_label()
 	# Scoring runs once; the re-glue handler runs on every settle, because
 	# pieces knocked loose by an impact settle (and re-glue) again.
@@ -243,19 +275,17 @@ func _refresh_hud() -> void:
 
 
 func _refresh_modifier_label() -> void:
-	if _stored_mod.is_empty():
+	if _pending_mod.is_empty():
 		_hud.set_modifier("Modifier: -   (Tab: spin the wheel)")
-	elif _mod_armed:
-		_hud.set_modifier("Modifier: %s ARMED   (F: take off)" % _stored_mod["name"])
 	else:
-		_hud.set_modifier("Modifier: %s   (F: apply to object)" % _stored_mod["name"])
+		_hud.set_modifier("Modifier: %s   (locked on this object)" % _pending_mod["name"])
 
 
 func _refresh_incoming(entry: Dictionary) -> void:
-	if _mod_armed:
-		_hud.set_incoming("Incoming: %s %s" % [_stored_mod["name"], entry["name"]])
-	else:
+	if _pending_mod.is_empty():
 		_hud.set_incoming("Incoming: %s" % entry["name"])
+	else:
+		_hud.set_incoming("Incoming: %s %s" % [_pending_mod["name"], entry["name"]])
 
 
 func _game_over(reason: String) -> void:
