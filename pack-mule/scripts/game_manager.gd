@@ -9,7 +9,6 @@ const COLLAPSE_COUNT := 3        # this many falls inside the window = collapse
 const COLLAPSE_WINDOW := 2.0     # seconds
 const SCORE_PER_OBJECT := 10
 const HEIGHT_SCORE_PER_METER := 10.0
-const PLACE_GAP := 0.02          # clearance between ghost hull and surface
 const AIM_RANGE := 200.0
 const YAW_SPEED := 2.6           # rad/s while holding Q/E
 const DONKEY_LENGTH := 3.0       # normalized donkey body length in meters
@@ -49,9 +48,9 @@ func _process(delta: float) -> void:
 	if _phase != Phase.AIMING or _ghost == null:
 		return
 	if Input.is_key_pressed(KEY_Q):
-		_ghost.rotate_y(YAW_SPEED * delta)
+		_ghost.spin(YAW_SPEED * delta)
 	if Input.is_key_pressed(KEY_E):
-		_ghost.rotate_y(-YAW_SPEED * delta)
+		_ghost.spin(-YAW_SPEED * delta)
 
 
 func _physics_process(_delta: float) -> void:
@@ -74,13 +73,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var axis := _camera.global_transform.basis.x
 		axis.y = 0.0
 		axis = axis.normalized() if axis.length() > 0.01 else Vector3.RIGHT
-		_ghost.global_rotate(axis, PI / 2.0)
+		_ghost.tip(axis, PI / 2.0)
 
 
-## Casts the crosshair (or the cursor when freed with Esc) into the world,
-## snaps the ghost flush onto the surface it hits, and nudges it out of any
-## overlap so it can never clip other objects. The spot is invalid only on
-## the bare ground or when no clear position exists nearby.
+## Casts the crosshair (or the cursor when freed with Esc) into the world
+## and hands the hit surface to the ghost, which tilts flush onto it and
+## rotates/slides itself out of any overlap. The spot is invalid only on
+## the bare ground or when no clear pose exists nearby.
 func _update_ghost() -> void:
 	var viewport := get_viewport()
 	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
@@ -99,8 +98,7 @@ func _update_ghost() -> void:
 	_ghost.visible = true
 	var normal: Vector3 = hit["normal"]
 	var pos: Vector3 = hit["position"]
-	_ghost.global_position = pos + normal * (_ghost.bottom_offset(normal) + PLACE_GAP)
-	var fits := _ghost.fit_clear(space, normal)
+	var fits := _ghost.place_on(space, pos, normal)
 	var on_ground: bool = hit["collider"] == _ground
 	_ghost.set_valid(not on_ground and fits)
 
