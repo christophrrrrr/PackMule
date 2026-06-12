@@ -6,7 +6,6 @@ class_name ObjectCatalog
 ## big+light is a wobbly platform, big+heavy is a wrecking ball.
 
 const ENTRIES := [
-	{"name": "Traffic Cone", "path": "res://assets/Traffic Cone.glb", "size": 0.7, "mass": 5.0},
 	{"name": "Chair", "path": "res://assets/Chair.glb", "size": 1.0, "mass": 8.0},
 	{"name": "Rubber Duck", "path": "res://assets/Rubber Duck.glb", "size": 1.5, "mass": 4.0},
 	{"name": "Tub", "path": "res://assets/Tub.glb", "size": 1.7, "mass": 35.0},

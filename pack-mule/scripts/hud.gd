@@ -6,6 +6,7 @@ signal restart_requested
 @onready var _score: Label = $ScoreLabel
 @onready var _height: Label = $HeightLabel
 @onready var _strikes: Label = $StrikesLabel
+@onready var _mode: Label = $ModeLabel
 @onready var _incoming: Label = $IncomingLabel
 @onready var _crosshair: Label = $Crosshair
 @onready var _game_over: CenterContainer = $GameOverPanel
@@ -29,6 +30,15 @@ func set_height(meters: float) -> void:
 
 func set_strikes(current: int, max_strikes: int) -> void:
 	_strikes.text = "Fallen: %d / %d" % [current, max_strikes]
+
+
+## `queued` is the mode name picked with M for the next run ("" if it is
+## the same as the active one).
+func set_mode(active: String, queued: String) -> void:
+	if queued.is_empty():
+		_mode.text = "Mode: %s" % active
+	else:
+		_mode.text = "Mode: %s  >  %s (next run)" % [active, queued]
 
 
 func set_incoming(text: String) -> void:

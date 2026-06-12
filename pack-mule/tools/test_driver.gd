@@ -19,7 +19,7 @@ func _ready() -> void:
 	# Without a player the mouse sits at (0,0); freeze ghost aiming and place
 	# objects programmatically instead.
 	_gm.set_physics_process(false)
-	print("[autotest] started, saddle top=%.2f" % _gm._base_top)
+	print("[autotest] started, saddle top=%.2f, mode=%s" % [_gm._base_top, _gm._mode["name"]])
 
 
 func _process(delta: float) -> void:
@@ -28,8 +28,8 @@ func _process(delta: float) -> void:
 	while _seen_settled < _gm._settled.size():
 		var obj: Node3D = _gm._settled[_seen_settled]
 		_seen_settled += 1
-		print("[autotest]   settled %s at y=%.2f (top_y=%.2f, tower_top=%.2f)" % [
-			obj.display_name, obj.global_position.y, obj.top_y(), _gm._tower_top])
+		print("[autotest]   settled %s at y=%.2f (top_y=%.2f, tower_top=%.2f, frozen=%s)" % [
+			obj.display_name, obj.global_position.y, obj.top_y(), _gm._tower_top, obj.freeze])
 	if _total > TIMEOUT:
 		print("[autotest] TIMEOUT in phase ", _gm._phase)
 		get_tree().quit(1)

@@ -22,6 +22,8 @@ enum Phase { AIMING, SETTLING, GAME_OVER }
 @onready var _kill_zone: Area3D = $KillZone
 
 var _phase := Phase.AIMING
+var _mode_index := 0
+var _mode: Dictionary = GameModes.MODES[0]
 var _score := 0
 var _strikes := 0
 var _ghost: GhostPreview
@@ -37,10 +39,14 @@ var _rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
 	_rng.randomize()
+	# The mode chosen with M applies from the next run on; runs pick it up here.
+	_mode_index = GameModes.selected
+	_mode = GameModes.MODES[_mode_index]
 	_setup_donkey()
 	_kill_zone.body_entered.connect(_on_kill_zone_body_entered)
 	_hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
 	_refresh_hud()
+	_refresh_mode_label()
 	_spawn_next()
 
 
@@ -60,6 +66,13 @@ func _physics_process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Mode cycling works in every phase (even on the game-over screen), since
+	# it only queues the physics for the next run.
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_M:
+		GameModes.selected = (GameModes.selected + 1) % GameModes.MODES.size()
+		_refresh_mode_label()
+		return
 	if _phase != Phase.AIMING or _ghost == null:
 		return
 	if event is InputEventMouseButton and event.pressed \
@@ -117,7 +130,7 @@ func _spawn_next() -> void:
 
 
 func _place_object(entry: Dictionary, xform: Transform3D) -> void:
-	var obj := StackableObject.create(entry)
+	var obj := StackableObject.create(entry, _mode)
 	obj.transform = xform
 	add_child(obj)
 	obj.drop()
@@ -134,6 +147,8 @@ func _place_object(entry: Dictionary, xform: Transform3D) -> void:
 func _on_object_settled(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
 		return
+	if _mode["freeze_settled"]:
+		obj.lock_in()
 	_settled.append(obj)
 	_score += SCORE_PER_OBJECT
 	if obj == _settling:
@@ -184,6 +199,11 @@ func _refresh_hud() -> void:
 	_hud.set_score(_total_score())
 	_hud.set_height(_tower_top - _base_top)
 	_hud.set_strikes(_strikes, STRIKES_TO_LOSE)
+
+
+func _refresh_mode_label() -> void:
+	var queued: String = GameModes.MODES[GameModes.selected]["name"]
+	_hud.set_mode(_mode["name"], queued if GameModes.selected != _mode_index else "")
 
 
 func _game_over(reason: String) -> void:

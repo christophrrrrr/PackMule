@@ -14,8 +14,6 @@ const SETTLE_LINEAR_SPEED := 0.15
 const SETTLE_ANGULAR_SPEED := 0.4
 const SETTLE_STILL_TIME := 0.7
 const SETTLE_TIMEOUT := 6.0
-const FRICTION := 0.9
-const ANGULAR_DAMP := 1.0
 
 var state := State.HELD
 var display_name := ""
@@ -25,15 +23,18 @@ var _still_time := 0.0
 var _fall_time := 0.0
 
 
-static func create(entry: Dictionary) -> StackableObject:
+## `mode` is one of GameModes.MODES and supplies the physics feel
+## (friction, bounce, damping) for the active run.
+static func create(entry: Dictionary, mode: Dictionary) -> StackableObject:
 	var obj := StackableObject.new()
 	obj.display_name = entry["name"]
 	obj.name = (entry["name"] as String).replace(" ", "")
 	obj.mass = entry["mass"]
-	obj.angular_damp = ANGULAR_DAMP
+	obj.linear_damp = mode["linear_damp"]
+	obj.angular_damp = mode["angular_damp"]
 	var mat := PhysicsMaterial.new()
-	mat.friction = FRICTION
-	mat.bounce = 0.0
+	mat.friction = mode["friction"]
+	mat.bounce = mode["bounce"]
 	obj.physics_material_override = mat
 	obj._build_model(entry["path"], entry["size"])
 	obj._enter_held()
@@ -99,6 +100,13 @@ func drop() -> void:
 	angular_velocity = Vector3.ZERO
 	_still_time = 0.0
 	_fall_time = 0.0
+
+
+## Sticky mode: lock a settled object in place so the tower below can
+## never wobble apart — it becomes part of the terrain.
+func lock_in() -> void:
+	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+	freeze = true
 
 
 ## Called by the game manager when this body enters the kill zone.
