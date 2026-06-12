@@ -21,7 +21,7 @@ var _base: StackableObject
 
 func _ready() -> void:
 	_gm.set_physics_process(false)  # no mouse: keep the ghost aiming frozen
-	print("[stickytest] started, mode=%s" % _gm._mode["name"])
+	print("[stickytest] started")
 
 
 func _check(label: String, ok: bool) -> void:

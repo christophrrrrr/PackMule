@@ -19,7 +19,7 @@ func _ready() -> void:
 	# Without a player the mouse sits at (0,0); freeze ghost aiming and place
 	# objects programmatically instead.
 	_gm.set_physics_process(false)
-	print("[autotest] started, saddle top=%.2f, mode=%s" % [_gm._base_top, _gm._mode["name"]])
+	print("[autotest] started, saddle top=%.2f" % _gm._base_top)
 
 
 func _process(delta: float) -> void:

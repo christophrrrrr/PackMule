@@ -15,4 +15,10 @@ const ENTRIES := [
 	{"name": "Couch", "path": "res://assets/Couch.glb", "size": 2.2, "mass": 40.0},
 	{"name": "Piano", "path": "res://assets/Piano.glb", "size": 1.8, "mass": 90.0},
 	{"name": "Lady Liberty", "path": "res://assets/Lady Liberty.glb", "size": 2.0, "mass": 60.0},
+	{"name": "Car", "path": "res://assets/Car.glb", "size": 2.4, "mass": 120.0},
+	{"name": "Cow", "path": "res://assets/Cow.glb", "size": 2.0, "mass": 75.0},
+	{"name": "Rug", "path": "res://assets/Rug.glb", "size": 2.0, "mass": 6.0},
+	{"name": "Table", "path": "res://assets/Table.glb", "size": 1.6, "mass": 15.0},
+	{"name": "Toilet", "path": "res://assets/Toilet.glb", "size": 0.9, "mass": 25.0},
+	{"name": "Trashcan", "path": "res://assets/Trashcan.glb", "size": 1.0, "mass": 12.0},
 ]

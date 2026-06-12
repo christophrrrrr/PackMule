@@ -1,8 +1,9 @@
-[gd_scene load_steps=11 format=3 uid="uid://dv4erpxrfw48a"]
+[gd_scene load_steps=12 format=3 uid="uid://dv4erpxrfw48a"]
 
 [ext_resource type="Script" uid="uid://ntrqrf7228vt" path="res://scripts/game_manager.gd" id="1"]
 [ext_resource type="Script" uid="uid://ccxpk62gvn86s" path="res://scripts/camera_rig.gd" id="2"]
 [ext_resource type="Script" uid="uid://cvkdef2dmtvie" path="res://scripts/hud.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/modifier_wheel.gd" id="4"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
 sky_top_color = Color(0.35, 0.55, 0.8, 1)
@@ -95,13 +96,13 @@ offset_bottom = 102.0
 theme_override_font_sizes/font_size = 18
 text = "Fallen: 0 / 3"
 
-[node name="ModeLabel" type="Label" parent="HUD"]
+[node name="ModifierLabel" type="Label" parent="HUD"]
 offset_left = 16.0
 offset_top = 106.0
-offset_right = 480.0
+offset_right = 560.0
 offset_bottom = 132.0
 theme_override_font_sizes/font_size = 18
-text = "Mode: Realistic"
+text = "Modifier: -   (Tab: spin the wheel)"
 
 [node name="IncomingLabel" type="Label" parent="HUD"]
 anchors_preset = 5
@@ -122,7 +123,7 @@ anchor_bottom = 1.0
 offset_top = -34.0
 offset_bottom = -8.0
 theme_override_font_sizes/font_size = 14
-text = "Fly: WASD + Mouse (Space/Ctrl = up/down, Shift = fast, Wheel = speed)   |   Rotate: Q / E   |   Tip over: R   |   Place: Left Click   |   M: physics mode (next run)   |   Esc: free the cursor"
+text = "Fly: WASD + Mouse (Space/Ctrl = up/down, Shift = fast, Wheel = speed)   |   Q/E rotate, R tip   |   LMB place   |   Tab: spin wheel   |   F: use modifier   |   Esc: free cursor"
 horizontal_alignment = 1
 
 [node name="Crosshair" type="Label" parent="HUD"]
@@ -139,6 +140,13 @@ theme_override_font_sizes/font_size = 20
 text = "+"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="WheelOverlay" type="Control" parent="HUD"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("4")
 
 [node name="GameOverPanel" type="CenterContainer" parent="HUD"]
 visible = false

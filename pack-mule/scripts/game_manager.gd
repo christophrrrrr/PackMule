@@ -22,8 +22,6 @@ enum Phase { AIMING, SETTLING, GAME_OVER }
 @onready var _kill_zone: Area3D = $KillZone
 
 var _phase := Phase.AIMING
-var _mode_index := 0
-var _mode: Dictionary = GameModes.MODES[0]
 var _score := 0
 var _strikes := 0
 var _ghost: GhostPreview
@@ -35,18 +33,18 @@ var _max_height := 0.0
 var _fall_times: Array[float] = []
 var _last_index := -1
 var _rng := RandomNumberGenerator.new()
+var _stored_mod: Dictionary = {} # modifier won on the wheel, waiting to be used
+var _mod_armed := false          # stored modifier applied to the current ghost
 
 
 func _ready() -> void:
 	_rng.randomize()
-	# The mode chosen with M applies from the next run on; runs pick it up here.
-	_mode_index = GameModes.selected
-	_mode = GameModes.MODES[_mode_index]
 	_setup_donkey()
 	_kill_zone.body_entered.connect(_on_kill_zone_body_entered)
 	_hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
+	_hud.wheel_landed.connect(_on_wheel_landed)
 	_refresh_hud()
-	_refresh_mode_label()
+	_refresh_modifier_label()
 	_spawn_next()
 
 
@@ -66,13 +64,16 @@ func _physics_process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Mode cycling works in every phase (even on the game-over screen), since
-	# it only queues the physics for the next run.
-	if event is InputEventKey and event.pressed and not event.echo \
-			and event.keycode == KEY_M:
-		GameModes.selected = (GameModes.selected + 1) % GameModes.MODES.size()
-		_refresh_mode_label()
-		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		# Wheel and modifier keys work outside strict aiming, too.
+		if event.keycode == KEY_TAB:
+			if _phase != Phase.GAME_OVER and _stored_mod.is_empty() \
+					and not _hud.wheel_busy():
+				_hud.spin_wheel()
+			return
+		if event.keycode == KEY_F:
+			_toggle_modifier()
+			return
 	if _phase != Phase.AIMING or _ghost == null:
 		return
 	if event is InputEventMouseButton and event.pressed \
@@ -87,6 +88,29 @@ func _unhandled_input(event: InputEvent) -> void:
 		axis.y = 0.0
 		axis = axis.normalized() if axis.length() > 0.01 else Vector3.RIGHT
 		_ghost.tip(axis, PI / 2.0)
+
+
+func _on_wheel_landed(modifier: Dictionary) -> void:
+	_stored_mod = modifier
+	_refresh_modifier_label()
+
+
+## F: applies the stored modifier to the object being aimed (the ghost is
+## rebuilt at the modified size); pressing F again takes it off. Placing
+## the object while armed consumes the modifier.
+func _toggle_modifier() -> void:
+	if _stored_mod.is_empty() or _phase != Phase.AIMING or _ghost == null:
+		return
+	_mod_armed = not _mod_armed
+	var entry := _ghost.entry
+	var user_basis := _ghost.user_basis
+	_ghost.queue_free()
+	_ghost = GhostPreview.create(entry, _stored_mod if _mod_armed else {})
+	_ghost.user_basis = user_basis
+	_ghost.visible = false
+	add_child(_ghost)
+	_refresh_modifier_label()
+	_refresh_incoming(entry)
 
 
 ## Casts the crosshair (or the cursor when freed with Esc) into the world
@@ -122,20 +146,26 @@ func _spawn_next() -> void:
 		idx = _rng.randi_range(0, ObjectCatalog.ENTRIES.size() - 1)
 	_last_index = idx
 	var entry: Dictionary = ObjectCatalog.ENTRIES[idx]
+	_mod_armed = false
 	_ghost = GhostPreview.create(entry)
 	_ghost.visible = false  # hidden until the first aim raycast lands
 	add_child(_ghost)
 	_phase = Phase.AIMING
-	_hud.set_incoming("Incoming: %s" % entry["name"])
+	_refresh_incoming(entry)
+	_refresh_modifier_label()
 
 
 func _place_object(entry: Dictionary, xform: Transform3D) -> void:
-	var obj := StackableObject.create(entry, _mode)
+	var obj := StackableObject.create(entry, _stored_mod if _mod_armed else {})
 	obj.transform = xform
 	add_child(obj)
 	obj.drop()
-	# Scoring runs once; the re-glue handler runs on every settle, because in
-	# Sticky mode pieces knocked loose by an impact settle (and re-glue) again.
+	if _mod_armed:
+		_stored_mod = {}
+		_mod_armed = false
+		_refresh_modifier_label()
+	# Scoring runs once; the re-glue handler runs on every settle, because
+	# pieces knocked loose by an impact settle (and re-glue) again.
 	obj.settled.connect(_on_object_settled.bind(obj), CONNECT_ONE_SHOT)
 	obj.settled.connect(_on_object_resettled.bind(obj))
 	obj.fell.connect(_on_object_fell.bind(obj))
@@ -160,11 +190,11 @@ func _on_object_settled(obj: StackableObject) -> void:
 
 
 ## Every settle (including pieces that re-settle after glue broke):
-## glue down in Sticky mode and refresh the tower height.
+## glue down (unless Slippery) and refresh the tower height.
 func _on_object_resettled(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
 		return
-	if _mode["freeze_settled"]:
+	if not obj.no_glue:
 		obj.lock_in()
 	_recompute_tower_top()
 	_refresh_hud()
@@ -212,9 +242,20 @@ func _refresh_hud() -> void:
 	_hud.set_strikes(_strikes, STRIKES_TO_LOSE)
 
 
-func _refresh_mode_label() -> void:
-	var queued: String = GameModes.MODES[GameModes.selected]["name"]
-	_hud.set_mode(_mode["name"], queued if GameModes.selected != _mode_index else "")
+func _refresh_modifier_label() -> void:
+	if _stored_mod.is_empty():
+		_hud.set_modifier("Modifier: -   (Tab: spin the wheel)")
+	elif _mod_armed:
+		_hud.set_modifier("Modifier: %s ARMED   (F: take off)" % _stored_mod["name"])
+	else:
+		_hud.set_modifier("Modifier: %s   (F: apply to object)" % _stored_mod["name"])
+
+
+func _refresh_incoming(entry: Dictionary) -> void:
+	if _mod_armed:
+		_hud.set_incoming("Incoming: %s %s" % [_stored_mod["name"], entry["name"]])
+	else:
+		_hud.set_incoming("Incoming: %s" % entry["name"])
 
 
 func _game_over(reason: String) -> void:
@@ -228,9 +269,9 @@ func _game_over(reason: String) -> void:
 	_hud.show_game_over(reason, _total_score(), _max_height)
 
 
-## Builds the donkey base: normalized visual model plus box collision for the
-## torso and a flat "saddle" platform on its back (a convex hull of the whole
-## donkey would slope from head to rump, which makes stacking unfair).
+## Builds the donkey base: normalized visual model, an exact trimesh hitbox
+## of the whole body (head, neck, rump — all stackable surfaces), and a
+## flat red platform sitting on top of the back as the clear primary base.
 func _setup_donkey() -> void:
 	var model: Node3D = (load("res://assets/Donkey.glb") as PackedScene).instantiate()
 	_donkey_base.add_child(model)
@@ -249,49 +290,81 @@ func _setup_donkey() -> void:
 	model.scale = Vector3.ONE * sf
 	model.position = -origin_offset * sf
 
-	# The back height is the highest mesh point near the middle of the body
-	# (the head sits at one end, so it is excluded by the window).
+	# Full-body collision from the actual triangles (static body, so a
+	# concave shape is fine) — the player can stack on the head if they dare.
+	var faces := PackedVector3Array()
+	_collect_faces(model, Transform3D.IDENTITY, faces)
+	var trimesh := ConcavePolygonShape3D.new()
+	trimesh.set_faces(faces)
+	var body_col := CollisionShape3D.new()
+	body_col.shape = trimesh
+	_donkey_base.add_child(body_col)
+
+	# The platform sits over the back, biased toward the rump: the head end
+	# is whichever outer third of the body reaches higher (ears beat tail).
+	var axis := Vector3(1, 0, 0) if along_x else Vector3(0, 0, 1)
+	var head_max := 0.0
+	var tail_max := 0.0
+	for v in faces:
+		var t := v.dot(axis)
+		if t > DONKEY_LENGTH * 0.25:
+			head_max = maxf(head_max, v.y)
+		elif t < -DONKEY_LENGTH * 0.25:
+			tail_max = maxf(tail_max, v.y)
+	var t_center := -0.25 if head_max >= tail_max else 0.25
+
+	var width := (aabb.size.z if along_x else aabb.size.x) * sf
+	var saddle_l := 1.0
+	var saddle_w := maxf(width * 1.05, 0.9)
+	# The highest body point inside the footprint decides the platform
+	# height, so nothing (spine, mane, tail root) pokes up through it.
 	var back_y := 0.0
-	for p in points:
-		var q := (p - origin_offset) * sf
-		var t := q.x if along_x else q.z
-		if absf(t) < DONKEY_LENGTH * 0.15:
-			back_y = maxf(back_y, q.y)
+	for v in faces:
+		var t := v.dot(axis) - t_center
+		var w := v.z if along_x else v.x
+		if absf(t) < saddle_l / 2.0 and absf(w) < saddle_w / 2.0:
+			back_y = maxf(back_y, v.y)
 	if back_y <= 0.0:
 		back_y = aabb.size.y * sf * 0.6
 
-	var width := (aabb.size.z if along_x else aabb.size.x) * sf
-	var saddle_l := maxf(DONKEY_LENGTH * 0.45, 1.3)
-	var saddle_w := maxf(width * 1.05, 0.9)
-	var saddle_size := Vector3(saddle_l, 0.15, saddle_w) if along_x \
-			else Vector3(saddle_w, 0.15, saddle_l)
-	var saddle_top := back_y + 0.03
-	_add_donkey_box(saddle_size, Vector3(0.0, saddle_top - saddle_size.y / 2.0, 0.0), true)
-
-	var torso_h := back_y * 0.55
-	var torso_size := Vector3(DONKEY_LENGTH * 0.6, torso_h, width * 0.9) if along_x \
-			else Vector3(width * 0.9, torso_h, DONKEY_LENGTH * 0.6)
-	_add_donkey_box(torso_size, Vector3(0.0, back_y - 0.05 - torso_h / 2.0, 0.0), false)
+	# Bottom sinks 2 cm into the fur so there is no visible gap.
+	var saddle_size := Vector3(saddle_l, 0.12, saddle_w) if along_x \
+			else Vector3(saddle_w, 0.12, saddle_l)
+	var saddle_top := back_y - 0.02 + saddle_size.y
+	_add_platform(saddle_size,
+			axis * t_center + Vector3(0.0, saddle_top - saddle_size.y / 2.0, 0.0))
 
 	_base_top = saddle_top
 	_tower_top = saddle_top
 
 
-func _add_donkey_box(size: Vector3, box_center: Vector3, visible_pad: bool) -> void:
+## Collects world triangles of every mesh in the subtree (transforms baked
+## in, so the collision shape itself stays unscaled).
+func _collect_faces(node: Node, parent_xform: Transform3D, faces: PackedVector3Array) -> void:
+	var xform := parent_xform
+	if node is Node3D:
+		xform = parent_xform * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		for v in (node as MeshInstance3D).mesh.get_faces():
+			faces.append(xform * v)
+	for child in node.get_children():
+		_collect_faces(child, xform, faces)
+
+
+func _add_platform(size: Vector3, box_center: Vector3) -> void:
 	var box := BoxShape3D.new()
 	box.size = size
 	var col := CollisionShape3D.new()
 	col.shape = box
 	col.position = box_center
 	_donkey_base.add_child(col)
-	if visible_pad:
-		# Show the saddle as a dark red blanket so the landing zone reads clearly.
-		var bm := BoxMesh.new()
-		bm.size = size
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.55, 0.15, 0.15)
-		bm.material = mat
-		var mesh := MeshInstance3D.new()
-		mesh.mesh = bm
-		mesh.position = box_center
-		_donkey_base.add_child(mesh)
+	# Dark red blanket so the primary landing zone reads clearly.
+	var bm := BoxMesh.new()
+	bm.size = size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.55, 0.15, 0.15)
+	bm.material = mat
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = bm
+	mesh.position = box_center
+	_donkey_base.add_child(mesh)

@@ -18,6 +18,7 @@ const FIT_YAWS_DEG := [15.0, -15.0, 30.0, -30.0, 45.0, -45.0]
 const FIT_TILTS_DEG := [10.0, -10.0, 20.0, -20.0]
 
 var entry: Dictionary
+var modifier: Dictionary = {}
 var half_extents := Vector3.ONE * 0.5
 var hull_points := PackedVector3Array()
 var valid := false
@@ -30,10 +31,11 @@ var _mat := StandardMaterial3D.new()
 var _shape := ConvexPolygonShape3D.new()
 
 
-static func create(p_entry: Dictionary) -> GhostPreview:
+static func create(p_entry: Dictionary, p_modifier: Dictionary = {}) -> GhostPreview:
 	var ghost := GhostPreview.new()
 	ghost.name = "Ghost"
 	ghost.entry = p_entry
+	ghost.modifier = p_modifier
 	ghost._build()
 	return ghost
 
@@ -133,8 +135,9 @@ func overlaps(space: PhysicsDirectSpaceState3D) -> bool:
 
 
 func _build() -> void:
+	var target: float = entry["size"] * modifier.get("size_mul", 1.0)
 	half_extents = StackableObject.build_normalized_model(
-			self, entry["path"], entry["size"], hull_points)
+			self, entry["path"], target, hull_points)
 	_shape.points = hull_points
 	_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
