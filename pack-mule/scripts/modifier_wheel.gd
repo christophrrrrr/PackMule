@@ -75,6 +75,16 @@ func _draw() -> void:
 			var a := a0 + seg * s / 16.0
 			pts.append(center + Vector2(cos(a), sin(a)) * RADIUS)
 		draw_colored_polygon(pts, modifier["color"])
+		# Special slices get a thick rim: gold = always good, red = risky.
+		if modifier.has("border"):
+			var border: Color = modifier["border"]
+			var arc := PackedVector2Array()
+			for s in 17:
+				var a := a0 + seg * s / 16.0
+				arc.append(center + Vector2(cos(a), sin(a)) * RADIUS)
+			draw_polyline(arc, border, 5.0, true)
+			draw_line(center, arc[0], border, 5.0)
+			draw_line(center, arc[16], border, 5.0)
 		var mid := a0 + seg / 2.0
 		var label: String = modifier["name"]
 		var width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x

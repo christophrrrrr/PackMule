@@ -18,11 +18,14 @@ const INTEGRITY_INTERVAL := 0.4  # seconds between floating-piece sweeps
 # peak under the donkey's hooves. Everything below the cloud layer is
 # invisible and lethal.
 const MOUNTAIN_HEIGHT := 50.0
-const CLOUD_ALTITUDE := -15.0    # puffy clouds, relative to the peak
-const CLOUD_SEA_Y := -16.0       # opaque white layer hiding the ground
-const KILL_TOP := -20.0          # below the clouds: out of sight = gone
-const CLOUD_SIZE := 14.0         # normalized longest side of one puff
-const CLOUD_COUNT := 12
+const MOUNTAIN_WIDEN := 2.5      # extra horizontal scale: a broader, flatter peak
+const MOUNTAIN_SUMMIT_Y := 1.0   # apex sits this far above the hooves, so the
+                                 # rock fills the donkey's footprint (it sinks in)
+const CLOUD_LAYER_Y := -13.0     # top of the cloud sea, below the peak
+const KILL_TOP := -12.0          # reaching the cloud band = swallowed, gone
+const CLOUD_DISC_RADIUS := 85.0  # how far the cloud carpet spreads
+const CLOUD_GRID_STEP := 4.0     # spacing of carpet puffs (smaller = denser)
+const CLOUD_PUFF_SIZE := 7.5     # diameter of one carpet puff
 
 enum Phase { AIMING, SETTLING, GAME_OVER }
 
@@ -99,7 +102,10 @@ func _check_integrity() -> void:
 	for obj in resting:
 		var neighbors: Array[StackableObject] = []
 		for body in obj.touching_bodies(space):
-			if body is StaticBody3D and not rooted.has(obj):
+			# Only the donkey anchors the tower — NOT the mountain. A piece
+			# resting on bare rock is "floating" as far as the tower goes, so
+			# it gets cut loose and slides off the frictionless slope.
+			if body == _donkey_base and not rooted.has(obj):
 				rooted[obj] = true
 				queue.append(obj)
 			elif body is StackableObject \
@@ -234,15 +240,28 @@ func _on_object_settled(obj: StackableObject) -> void:
 		_spawn_next()
 
 
-## Every settle (including pieces that re-settle after glue broke):
-## glue down (unless Slippery) and refresh the tower height.
+## Every settle (including pieces that re-settle after glue broke): glue
+## down only if the piece is part of the tower (touching the donkey or an
+## already-glued piece). A piece that merely landed on the mountainside
+## is left dynamic, so the slick rock slides it away into the clouds.
 func _on_object_resettled(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
 		return
-	if not obj.no_glue:
+	if not obj.no_glue and _is_anchored(obj):
 		obj.lock_in()
 	_recompute_tower_top()
 	_refresh_hud()
+
+
+## True if the object rests on the donkey or on an already-glued piece —
+## i.e. it belongs to the tower, not the bare mountain.
+func _is_anchored(obj: StackableObject) -> bool:
+	for body in obj.touching_bodies(get_world_3d().direct_space_state):
+		if body == _donkey_base:
+			return true
+		if body is StackableObject and (body as StackableObject).is_glued():
+			return true
+	return false
 
 
 func _on_object_fell(obj: StackableObject) -> void:
@@ -327,14 +346,16 @@ func _setup_mountain() -> void:
 		return
 	var aabb := StackableObject.points_aabb(points)
 	var sf := MOUNTAIN_HEIGHT / aabb.size.y
+	# Widen horizontally so the summit is a broad cap, not a sharp point —
+	# the donkey's spread hooves then rest on rock instead of hovering.
+	var scale := Vector3(sf * MOUNTAIN_WIDEN, sf, sf * MOUNTAIN_WIDEN)
 	var peak := points[0]
 	for p in points:
 		if p.y > peak.y:
 			peak = p
-	model.scale = Vector3.ONE * sf
-	# The highest vertex lands at the origin, sunk slightly so the donkey's
-	# hooves rest in the rock instead of hovering on a single point.
-	model.position = -peak * sf + Vector3(0, -0.15, 0)
+	model.scale = scale
+	# Put the summit just above the hooves so they sink into the rock.
+	model.position = -peak * scale + Vector3(0.0, MOUNTAIN_SUMMIT_Y, 0.0)
 
 	var faces := PackedVector3Array()
 	_collect_faces(model, Transform3D.IDENTITY, faces)
@@ -343,6 +364,12 @@ func _setup_mountain() -> void:
 	var col := CollisionShape3D.new()
 	col.shape = trimesh
 	_mountain.add_child(col)
+	# Frictionless rock: anything that misses the tower slides off the peak
+	# and down through the clouds instead of sticking to the slope.
+	var slick := PhysicsMaterial.new()
+	slick.friction = 0.0
+	slick.bounce = 0.0
+	_mountain.physics_material_override = slick
 
 	# The old ground becomes the valley floor, far out of sight.
 	_ground.position.y = -MOUNTAIN_HEIGHT
@@ -356,53 +383,79 @@ func _setup_mountain() -> void:
 	_setup_clouds()
 
 
-## A solid white "cloud sea" plane plus a ring of puffy clouds around the
-## peak — the player can never see what is below.
+## A dense white carpet of cloud puffs filling a wide disc around the peak,
+## backed by a solid white plane so no gap ever reveals the valley. The
+## puffs are one cloud sphere mesh drawn as a MultiMesh (hundreds of
+## instances, one draw call) so the sea is cheap.
 func _setup_clouds() -> void:
-	var sea_mesh := PlaneMesh.new()
-	sea_mesh.size = Vector2(600.0, 600.0)
-	var sea_mat := StandardMaterial3D.new()
-	sea_mat.albedo_color = Color(0.93, 0.95, 0.98)
-	sea_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	sea_mesh.material = sea_mat
+	var white := StandardMaterial3D.new()
+	white.albedo_color = Color(0.96, 0.97, 0.99)
+	white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+
+	# Backstop plane just under the puffs.
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(CLOUD_DISC_RADIUS * 3.0, CLOUD_DISC_RADIUS * 3.0)
+	plane.material = white
 	var sea := MeshInstance3D.new()
-	sea.mesh = sea_mesh
-	sea.position = Vector3(0.0, CLOUD_SEA_Y, 0.0)
+	sea.mesh = plane
+	sea.position = Vector3(0.0, CLOUD_LAYER_Y - 1.5, 0.0)
 	_clouds.add_child(sea)
 
-	var template := Node3D.new()
-	var built := _normalized_visual("res://assets/Cloud.glb", CLOUD_SIZE, template)
-	if not built:
+	var puff_mesh := _cloud_puff_mesh()
+	if puff_mesh == null:
 		return
-	for i in CLOUD_COUNT:
-		var puff := template.duplicate() as Node3D
-		var angle := TAU * i / CLOUD_COUNT + _rng.randf_range(-0.2, 0.2)
-		var radius := _rng.randf_range(12.0, 38.0)
-		puff.position = Vector3(cos(angle) * radius,
-				CLOUD_ALTITUDE + _rng.randf_range(-2.0, 2.0), sin(angle) * radius)
-		puff.rotation.y = _rng.randf_range(0.0, TAU)
-		puff.scale = Vector3.ONE * _rng.randf_range(0.6, 1.1)
-		_clouds.add_child(puff)
-	template.free()
+	var base := CLOUD_PUFF_SIZE / maxf(puff_mesh.get_aabb().size.x, 0.001)
+
+	# Jittered grid of puff transforms across the disc.
+	var xforms: Array[Transform3D] = []
+	var r := CLOUD_DISC_RADIUS
+	var x := -r
+	while x <= r:
+		var z := -r
+		while z <= r:
+			if x * x + z * z <= r * r:
+				var pos := Vector3(x + _rng.randf_range(-1.5, 1.5),
+						CLOUD_LAYER_Y + _rng.randf_range(-1.2, 0.8),
+						z + _rng.randf_range(-1.5, 1.5))
+				var s := base * _rng.randf_range(0.8, 1.6)
+				# Squashed a little so the carpet reads flat, not lumpy balls.
+				var b := Basis.from_scale(Vector3(s, s * 0.6, s)) \
+						.rotated(Vector3.UP, _rng.randf_range(0.0, TAU))
+				xforms.append(Transform3D(b, pos))
+			z += CLOUD_GRID_STEP
+		x += CLOUD_GRID_STEP
+
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = puff_mesh
+	mm.instance_count = xforms.size()
+	for i in xforms.size():
+		mm.set_instance_transform(i, xforms[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = white
+	_clouds.add_child(mmi)
 
 
-## Loads a .glb purely as a visual, scaled so its longest side equals
-## `target_size` and recentered on `host`'s origin. Returns false if the
-## file has no meshes.
-func _normalized_visual(path: String, target_size: float, host: Node3D) -> bool:
-	var model: Node3D = (load(path) as PackedScene).instantiate()
-	host.add_child(model)
-	var points := PackedVector3Array()
-	StackableObject.collect_hull_points(model, Transform3D.IDENTITY, points)
-	if points.is_empty():
-		push_error("%s has no mesh geometry" % path)
-		return false
-	var aabb := StackableObject.points_aabb(points)
-	var longest := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
-	var sf := target_size / longest
-	model.scale = Vector3.ONE * sf
-	model.position = -aabb.get_center() * sf
-	return true
+## The single sphere mesh that Cloud.glb is built from (it is 16 copies of
+## one sphere); used as the carpet puff.
+func _cloud_puff_mesh() -> Mesh:
+	var model: Node3D = (load("res://assets/Cloud.glb") as PackedScene).instantiate()
+	var found := _find_first_mesh(model)
+	model.queue_free()
+	if found == null:
+		push_error("Cloud.glb has no mesh geometry")
+	return found
+
+
+func _find_first_mesh(node: Node) -> Mesh:
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		return (node as MeshInstance3D).mesh
+	for child in node.get_children():
+		var found := _find_first_mesh(child)
+		if found != null:
+			return found
+	return null
 
 
 ## Builds the donkey base: normalized visual model, an exact trimesh hitbox

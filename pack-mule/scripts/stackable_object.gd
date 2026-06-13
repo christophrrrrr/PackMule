@@ -92,19 +92,39 @@ static func collect_hull_points(node: Node, parent_xform: Transform3D, points: P
 		collect_hull_points(child, xform, points)
 
 
-## V-HACD decomposition of a .glb into convex parts (raw model space), so
-## hollow objects (tub, toilet, trashcan...) get real concave hitboxes
-## instead of a shrink-wrapped block. Expensive, so cached per path —
-## the cache survives scene reloads.
+## Convex parts (raw model space) of a .glb so hollow objects (tub, toilet,
+## trashcan...) get real concave hitboxes instead of a shrink-wrapped
+## block. The expensive V-HACD pass is baked into HitboxLibrary; this just
+## loads the parts. Cache survives scene reloads.
+const LIBRARY_PATH := "res://hitboxes.res"
+
 static var _decomp_cache := {}
+static var _library: HitboxLibrary = null
+static var _library_loaded := false
+
+
+static func _get_library() -> HitboxLibrary:
+	if not _library_loaded:
+		_library_loaded = true
+		if ResourceLoader.exists(LIBRARY_PATH):
+			_library = load(LIBRARY_PATH)
+	return _library
+
 
 static func decompose(path: String) -> Dictionary:
 	if _decomp_cache.has(path):
 		return _decomp_cache[path]
-	var model: Node3D = (load(path) as PackedScene).instantiate()
 	var parts: Array[PackedVector3Array] = []
-	_collect_convex_parts(model, Transform3D.IDENTITY, parts)
-	model.free()
+	var lib := _get_library()
+	if lib != null and lib.entries.has(path):
+		for p: PackedVector3Array in lib.entries[path]:
+			parts.append(p)
+	else:
+		# Not baked (e.g. a newly added asset): compute live this once. The
+		# in-memory cache keeps it to a single hitch per session; re-run
+		# tools/bake_hitboxes.gd to fold it into the library.
+		push_warning("Hitbox for %s not baked; computing live (slow)" % path)
+		parts = compute_parts(path)
 	var all_points := PackedVector3Array()
 	for part in parts:
 		all_points.append_array(part)
@@ -114,6 +134,16 @@ static func decompose(path: String) -> Dictionary:
 	}
 	_decomp_cache[path] = result
 	return result
+
+
+## The raw V-HACD pass: instantiates the .glb and returns its convex parts
+## in model space. Used by the bake tool and the not-baked fallback.
+static func compute_parts(path: String) -> Array[PackedVector3Array]:
+	var model: Node3D = (load(path) as PackedScene).instantiate()
+	var parts: Array[PackedVector3Array] = []
+	_collect_convex_parts(model, Transform3D.IDENTITY, parts)
+	model.free()
+	return parts
 
 
 static func _collect_convex_parts(node: Node, parent_xform: Transform3D, parts: Array[PackedVector3Array]) -> void:

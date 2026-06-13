@@ -7,6 +7,10 @@ class_name ModifierCatalog
 ## object's default. Slippery objects never glue — a permanent live
 ## wobble in the tower. Super Glue bonds instantly on first contact and
 ## its glue can never be broken.
+## Optional "border" tints a wheel slice's rim: gold = always good,
+## red = always risky; the rest are neutral tradeoffs (no border).
+const BORDER_GOOD := Color(1.0, 0.84, 0.0)
+const BORDER_BAD := Color(0.9, 0.2, 0.18)
 
 const ENTRIES := [
 	{
@@ -38,11 +42,13 @@ const ENTRIES := [
 		"color": Color(0.4, 0.9, 0.9),
 		"size_mul": 1.0, "mass_mul": 1.0,
 		"friction": 0.1, "no_glue": true, "super_glue": false,
+		"border": BORDER_BAD,
 	},
 	{
 		"name": "Super Glue",
 		"color": Color(0.45, 0.85, 0.4),
 		"size_mul": 1.0, "mass_mul": 1.0,
 		"friction": -1.0, "no_glue": false, "super_glue": true,
+		"border": BORDER_GOOD,
 	},
 ]

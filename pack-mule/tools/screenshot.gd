@@ -30,6 +30,12 @@ func _process(_delta: float) -> bool:
 		rig.look_at(Vector3(0.0, -4.0, 0.0))
 		rig._yaw = rig.rotation.y
 		rig._pitch = rig.rotation.x
+	if _frames == 10 and "feet" in OS.get_cmdline_user_args():
+		var rig: Node3D = root.get_node("Main/CameraRig")
+		rig.position = Vector3(4.0, 2.6, 4.0)
+		rig.look_at(Vector3(0.0, 0.3, 0.0))  # look down at the hooves / peak rock
+		rig._yaw = rig.rotation.y
+		rig._pitch = rig.rotation.x
 	if _frames == 60:
 		var img := root.get_viewport().get_texture().get_image()
 		img.save_png("user://shot.png")
