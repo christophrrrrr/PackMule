@@ -161,33 +161,3 @@ visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-
-[node name="Panel" type="PanelContainer" parent="HUD/GameOverPanel"]
-layout_mode = 2
-
-[node name="Margin" type="MarginContainer" parent="HUD/GameOverPanel/Panel"]
-layout_mode = 2
-theme_override_constants/margin_left = 32
-theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 32
-theme_override_constants/margin_bottom = 24
-
-[node name="Box" type="VBoxContainer" parent="HUD/GameOverPanel/Panel/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="TitleLabel" type="Label" parent="HUD/GameOverPanel/Panel/Margin/Box"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 34
-text = "TOWER COLLAPSED!"
-horizontal_alignment = 1
-
-[node name="StatsLabel" type="Label" parent="HUD/GameOverPanel/Panel/Margin/Box"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-horizontal_alignment = 1
-
-[node name="RestartButton" type="Button" parent="HUD/GameOverPanel/Panel/Margin/Box"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "Stack Again"

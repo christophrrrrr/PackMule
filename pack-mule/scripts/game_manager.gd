@@ -34,6 +34,7 @@ const CLOUD_PUFF_SIZE := 11.0    # diameter of one carpet puff
 enum Phase { AIMING, SETTLING, GAME_OVER }
 
 @onready var _camera: Camera3D = $CameraRig/Camera3D
+@onready var _camera_rig: CameraRig = $CameraRig
 @onready var _hud: GameHud = $HUD
 @onready var _ground: StaticBody3D = $Ground
 @onready var _mountain: StaticBody3D = $Mountain
@@ -55,9 +56,12 @@ var _last_index := -1
 var _rng := RandomNumberGenerator.new()
 var _pending_mod: Dictionary = {} # wheel result, locked onto the current object
 var _integrity_timer := 0.0
+var _placed_count := 0           # objects the player has stacked this run
+var _total_weight := 0.0         # combined mass the mule has carried (kg)
 
 
 func _ready() -> void:
+	Engine.time_scale = 1.0       # a previous run froze the scene for its photo
 	_rng.randomize()
 	_setup_mountain()
 	_setup_donkey()
@@ -216,6 +220,8 @@ func _place_object(entry: Dictionary, xform: Transform3D) -> void:
 	obj.transform = xform
 	add_child(obj)
 	obj.drop()
+	_placed_count += 1
+	_total_weight += obj.mass
 	if not _pending_mod.is_empty():
 		_pending_mod = {}
 		_refresh_modifier_label()
@@ -329,10 +335,56 @@ func _game_over(reason: String) -> void:
 	if _ghost != null:
 		_ghost.queue_free()
 		_ghost = null
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # so the Restart button is clickable
-	_hud.set_crosshair(false)
-	_hud.set_incoming("")
-	_hud.show_game_over(reason, _total_score(), _max_height)
+	# Freeze the whole scene so the photo is crisp, then frame and shoot the
+	# tower before any UI is shown.
+	Engine.time_scale = 0.0
+	_camera_rig.set_process(false)
+	_camera_rig.set_physics_process(false)
+	_hud.set_in_game_hud_visible(false)
+	var photo := await _capture_tower_photo()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # so the buttons are clickable
+	var stats := {
+		"height": _max_height,
+		"objects": _placed_count,
+		"weight": _total_weight,
+		"score": _total_score(),
+	}
+	_hud.show_game_over(reason, stats, photo)
+
+
+## Frames the whole tower (donkey + everything stacked) in the camera and
+## returns a rendered image of it against the sky. Bounding-sphere framing
+## guarantees nothing is ever cut off.
+func _capture_tower_photo() -> Image:
+	if DisplayServer.get_name() == "headless":
+		return null  # no renderer in headless test runs
+	var aabb := _tower_world_aabb()
+	var center := aabb.get_center()
+	var radius := maxf(aabb.size.length() * 0.5, 1.5)
+	var dist := radius / sin(deg_to_rad(_camera.fov * 0.5)) * 1.12
+	var dir := Vector3(0.72, 0.42, 1.0).normalized()
+	_camera.global_position = center + dir * dist
+	_camera.look_at(center, Vector3.UP)
+	# Let the moved camera render before grabbing the frame.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	return get_viewport().get_texture().get_image()
+
+
+## World-space box around the donkey and every object still on the tower.
+func _tower_world_aabb() -> AABB:
+	# Start with the donkey/summit region so the mule is always in shot.
+	var aabb := AABB(Vector3(-1.9, -0.4, -1.9), Vector3(3.8, 3.0, 3.8))
+	for obj in _settled:
+		if not is_instance_valid(obj):
+			continue
+		var t := obj.global_transform
+		var he := obj.half_extents
+		for sx in [-1.0, 1.0]:
+			for sy in [-1.0, 1.0]:
+				for sz in [-1.0, 1.0]:
+					aabb = aabb.expand(t * Vector3(sx * he.x, sy * he.y, sz * he.z))
+	return aabb
 
 
 ## Builds the world: the donkey stands on a mountain peak. The peak's
