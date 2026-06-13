@@ -29,7 +29,8 @@ func _ready() -> void:
 	look_at(START_LOOK_AT)
 	_yaw = rotation.y
 	_pitch = rotation.x
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# The game manager owns the mouse mode (the main menu needs a visible
+	# cursor); it captures the mouse when the run starts.
 
 
 func _unhandled_input(event: InputEvent) -> void:

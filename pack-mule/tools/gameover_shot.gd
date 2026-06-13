@@ -29,6 +29,7 @@ func _process(_dt: float) -> bool:
 	_frame += 1
 	if _gm == null and root.has_node("Main"):
 		_gm = root.get_node("Main")
+		_gm._start_game()  # skip the main menu
 		_gm.set_physics_process(false)  # no mouse aiming
 	if _gm == null:
 		return false

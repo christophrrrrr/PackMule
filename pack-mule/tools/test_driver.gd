@@ -16,8 +16,9 @@ var _seen_settled := 0
 
 
 func _ready() -> void:
-	# Without a player the mouse sits at (0,0); freeze ghost aiming and place
+	# Skip the main menu, then freeze ghost aiming (no mouse) and place
 	# objects programmatically instead.
+	_gm._start_game()
 	_gm.set_physics_process(false)
 	print("[autotest] started, saddle top=%.2f" % _gm._base_top)
 
@@ -34,19 +35,19 @@ func _process(delta: float) -> void:
 		print("[autotest] TIMEOUT in phase ", _gm._phase)
 		get_tree().quit(1)
 		return
-	if _gm._phase == 2:  # GAME_OVER
+	if _gm._phase == GameManager.Phase.GAME_OVER:
 		print("[autotest] game over reached after %d drops: score=%d strikes=%d" % [
 			_drops, _gm._total_score(), _gm._strikes])
 		get_tree().quit(0)
 		return
 	if _drops >= MAX_DROPS:
-		if _gm._phase == 0:  # AIMING again => last drop fully resolved
+		if _gm._phase == GameManager.Phase.AIMING:  # last drop fully resolved
 			print("[autotest] PASS: drops=%d settled=%d score=%d strikes=%d height=%.2f" % [
 				_drops, _gm._settled.size(), _gm._total_score(), _gm._strikes,
 				_gm._tower_top - _gm._base_top])
 			get_tree().quit(0)
 		return
-	if _gm._phase == 0 and _gm._ghost != null and _since_action > 0.3:
+	if _gm._phase == GameManager.Phase.AIMING and _gm._ghost != null and _since_action > 0.3:
 		_since_action = 0.0
 		_drops += 1
 		var ghost: Node3D = _gm._ghost

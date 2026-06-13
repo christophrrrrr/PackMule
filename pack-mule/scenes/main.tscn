@@ -77,60 +77,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 9)
 [node name="HUD" type="CanvasLayer" parent="."]
 script = ExtResource("3")
 
-[node name="ScoreLabel" type="Label" parent="HUD"]
-offset_left = 16.0
-offset_top = 10.0
-offset_right = 320.0
-offset_bottom = 42.0
-theme_override_font_sizes/font_size = 24
-text = "Score: 0"
-
-[node name="HeightLabel" type="Label" parent="HUD"]
-offset_left = 16.0
-offset_top = 46.0
-offset_right = 320.0
-offset_bottom = 72.0
-theme_override_font_sizes/font_size = 18
-text = "Height: 0.0 m"
-
-[node name="StrikesLabel" type="Label" parent="HUD"]
-offset_left = 16.0
-offset_top = 76.0
-offset_right = 320.0
-offset_bottom = 102.0
-theme_override_font_sizes/font_size = 18
-text = "Fallen: 0 / 3"
-
-[node name="ModifierLabel" type="Label" parent="HUD"]
-offset_left = 16.0
-offset_top = 106.0
-offset_right = 560.0
-offset_bottom = 132.0
-theme_override_font_sizes/font_size = 18
-text = "Modifier: -   (Tab: spin the wheel)"
-
-[node name="IncomingLabel" type="Label" parent="HUD"]
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -300.0
-offset_top = 10.0
-offset_right = 300.0
-offset_bottom = 46.0
-theme_override_font_sizes/font_size = 26
-horizontal_alignment = 1
-
-[node name="HintLabel" type="Label" parent="HUD"]
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -34.0
-offset_bottom = -8.0
-theme_override_font_sizes/font_size = 14
-text = "Fly: WASD + Mouse (Space/Ctrl = up/down, Shift = fast, Wheel = speed)   |   Q/E rotate, R tip   |   LMB place   |   Tab: spin wheel (applies to current object)   |   Esc: free cursor"
-horizontal_alignment = 1
-
 [node name="Crosshair" type="Label" parent="HUD"]
 anchors_preset = 8
 anchor_left = 0.5

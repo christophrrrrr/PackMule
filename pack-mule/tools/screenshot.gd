@@ -16,6 +16,8 @@ func _init() -> void:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
+	if _frames == 6 and "play" in OS.get_cmdline_user_args():
+		(root.get_node("Main") as GameManager)._start_game()
 	if _frames == 30 and _spin_wheel:
 		(root.get_node("Main/HUD") as GameHud).spin_wheel()
 	if _frames == 10 and "side" in OS.get_cmdline_user_args():

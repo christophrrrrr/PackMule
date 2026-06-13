@@ -1,8 +1,13 @@
+class_name GameManager
 extends Node3D
 
 ## Pack Mule v0.1 game manager: shows a blueprint ghost of the next object,
 ## places the real physics object where the player clicks, and tracks
 ## score, strikes, and collapse.
+
+## Set before a scene reload so "Stack Again" jumps straight back into play
+## and skips the main menu. A script static, so it survives the reload.
+static var _autostart := false
 
 const STRIKES_TO_LOSE := 3
 const COLLAPSE_COUNT := 3        # this many falls inside the window = collapse
@@ -31,7 +36,7 @@ const CLOUD_DISC_RADIUS := 130.0 # how far the cloud carpet spreads (to the hori
 const CLOUD_GRID_STEP := 5.5     # spacing of carpet puffs (smaller = denser)
 const CLOUD_PUFF_SIZE := 11.0    # diameter of one carpet puff
 
-enum Phase { AIMING, SETTLING, GAME_OVER }
+enum Phase { MENU, AIMING, SETTLING, GAME_OVER }
 
 @onready var _camera: Camera3D = $CameraRig/Camera3D
 @onready var _camera_rig: CameraRig = $CameraRig
@@ -42,7 +47,7 @@ enum Phase { AIMING, SETTLING, GAME_OVER }
 @onready var _donkey_base: StaticBody3D = $DonkeyBase
 @onready var _kill_zone: Area3D = $KillZone
 
-var _phase := Phase.AIMING
+var _phase := Phase.MENU
 var _score := 0
 var _strikes := 0
 var _ghost: GhostPreview
@@ -58,6 +63,7 @@ var _pending_mod: Dictionary = {} # wheel result, locked onto the current object
 var _integrity_timer := 0.0
 var _placed_count := 0           # objects the player has stacked this run
 var _total_weight := 0.0         # combined mass the mule has carried (kg)
+var _started := false            # the run has begun (past the main menu)
 
 
 func _ready() -> void:
@@ -66,11 +72,38 @@ func _ready() -> void:
 	_setup_mountain()
 	_setup_donkey()
 	_kill_zone.body_entered.connect(_on_kill_zone_body_entered)
-	_hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
+	_hud.restart_requested.connect(_on_restart)
+	_hud.start_requested.connect(_start_game)
 	_hud.wheel_landed.connect(_on_wheel_landed)
+	if _autostart:
+		_autostart = false
+		_start_game()
+	else:
+		# Wait on the main menu; the peak sits in the background as a backdrop.
+		_phase = Phase.MENU
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		_camera_rig.set_process(false)
+		_hud.show_main_menu()
+
+
+## Leaves the menu and begins a run: hand control to the fly camera, show
+## the readouts, and spawn the first object.
+func _start_game() -> void:
+	if _started:
+		return
+	_started = true
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_camera_rig.set_process(true)
+	_hud.hide_main_menu()
+	_hud.set_in_game_hud_visible(true)
 	_refresh_hud()
 	_refresh_modifier_label()
 	_spawn_next()
+
+
+func _on_restart() -> void:
+	_autostart = true
+	get_tree().reload_current_scene()
 
 
 func _process(delta: float) -> void:

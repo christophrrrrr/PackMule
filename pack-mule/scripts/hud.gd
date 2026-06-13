@@ -1,36 +1,46 @@
 class_name GameHud
 extends CanvasLayer
 
-## In-game HUD plus the game-over "postcard" screen. The game-over screen is
-## the real reward — a framed photo of the tower with the run's stats baked
-## on, presented like a postcard the player can save and share.
+## All UI: the main menu, the in-game readouts, and the game-over "postcard"
+## screen — one playful cartoon style (rounded panels, the Luckiest Guy font,
+## bright colors) shared across all three.
 
 signal restart_requested
+signal start_requested
 signal wheel_landed(modifier: Dictionary)
 
-# Playful cartoon palette.
+# Cartoon palette.
 const CREAM := Color(0.98, 0.96, 0.89)
 const INK := Color(0.16, 0.15, 0.22)
-const PANEL_BG := Color(0.16, 0.17, 0.30, 0.96)
+const PANEL_BG := Color(0.16, 0.17, 0.30, 0.94)
 const SUNNY := Color(1.0, 0.83, 0.22)
 const SKY := Color(0.36, 0.74, 1.0)
 const LEAF := Color(0.42, 0.80, 0.36)
 const TANGERINE := Color(1.0, 0.55, 0.21)
 
-const POSTCARD_SIZE := Vector2i(1024, 680)
+const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   LMB PLACE   ·   TAB SPIN WHEEL   ·   ESC FREE CURSOR"
+const POSTCARD_SIZE := Vector2i(1024, 660)
 const PC_PAD := 22
-const PC_CAPTION_H := 150
+const PC_CAPTION_H := 96
 
-@onready var _score: Label = $ScoreLabel
-@onready var _height: Label = $HeightLabel
-@onready var _strikes: Label = $StrikesLabel
-@onready var _modifier: Label = $ModifierLabel
-@onready var _incoming: Label = $IncomingLabel
-@onready var _hint: Label = $HintLabel
 @onready var _crosshair: Label = $Crosshair
 @onready var _wheel: ModifierWheel = $WheelOverlay
 @onready var _game_over: CenterContainer = $GameOverPanel
 
+# In-game readouts (built in code).
+var _score: Label
+var _height: Label
+var _strikes: Label
+var _modifier: Label
+var _incoming: Label
+var _stats_box: PanelContainer
+var _incoming_box: PanelContainer
+var _hint_box: PanelContainer
+
+# Main menu.
+var _menu: CenterContainer
+
+# Game-over panel.
 var _go_built := false
 var _go_title: Label
 var _go_subtitle: Label
@@ -41,14 +51,55 @@ var _chip_values := {}
 # Postcard SubViewport (the shareable, baked image).
 var _pc_vp: SubViewport
 var _pc_photo: TextureRect
-var _pc_banner: Label
-var _pc_big: Label
 var _pc_caption: Label
 
 
 func _ready() -> void:
 	_game_over.visible = false
 	_wheel.landed.connect(func(modifier: Dictionary) -> void: wheel_landed.emit(modifier))
+	_build_in_game_hud()
+
+
+# --- In-game readouts --------------------------------------------------------
+
+func _build_in_game_hud() -> void:
+	_stats_box = PanelContainer.new()
+	_stats_box.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 16, Color(0, 0, 0, 0), 14, 10))
+	_stats_box.position = Vector2(16, 14)
+	var sbox := VBoxContainer.new()
+	sbox.add_theme_constant_override("separation", 2)
+	_stats_box.add_child(sbox)
+	_score = _make_label("SCORE: 0", 28, SUNNY)
+	_height = _make_label("HEIGHT: 0.0 m", 18, SKY)
+	_strikes = _make_label("FALLEN: 0 / 3", 18, TANGERINE)
+	_modifier = _make_label("MODIFIER: -   (TAB: SPIN)", 15, CREAM)
+	for n in [_score, _height, _strikes, _modifier]:
+		sbox.add_child(n)
+	add_child(_stats_box)
+
+	_incoming_box = PanelContainer.new()
+	_incoming_box.add_theme_stylebox_override("panel", _rounded(SUNNY, 16, SUNNY.darkened(0.3), 18, 6))
+	_incoming_box.anchor_left = 0.5
+	_incoming_box.anchor_right = 0.5
+	_incoming_box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_incoming_box.offset_top = 14
+	_incoming = _make_label("", 24, INK)
+	_incoming_box.add_child(_incoming)
+	add_child(_incoming_box)
+
+	_hint_box = PanelContainer.new()
+	_hint_box.add_theme_stylebox_override("panel", _rounded(Color(0, 0, 0, 0.38), 12, Color(0, 0, 0, 0), 16, 6))
+	_hint_box.anchor_left = 0.5
+	_hint_box.anchor_right = 0.5
+	_hint_box.anchor_top = 1.0
+	_hint_box.anchor_bottom = 1.0
+	_hint_box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_hint_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_hint_box.offset_top = -38
+	_hint_box.offset_bottom = -8
+	var hint := _make_label(HINT_TEXT, 14, CREAM)
+	_hint_box.add_child(hint)
+	add_child(_hint_box)
 
 
 func spin_wheel() -> void:
@@ -77,6 +128,7 @@ func set_modifier(text: String) -> void:
 
 func set_incoming(text: String) -> void:
 	_incoming.text = text
+	_incoming_box.visible = not text.is_empty()
 
 
 func set_crosshair(shown: bool) -> void:
@@ -85,9 +137,67 @@ func set_crosshair(shown: bool) -> void:
 
 ## Hides every in-game readout so the tower photo is captured clean.
 func set_in_game_hud_visible(shown: bool) -> void:
-	for node in [_score, _height, _strikes, _modifier, _incoming, _hint, _crosshair]:
+	for node in [_stats_box, _incoming_box, _hint_box, _crosshair]:
 		node.visible = shown
 
+
+# --- Main menu ---------------------------------------------------------------
+
+func show_main_menu() -> void:
+	if _menu == null:
+		_build_main_menu()
+	set_in_game_hud_visible(false)
+	_menu.visible = true
+
+
+func hide_main_menu() -> void:
+	if _menu != null:
+		_menu.visible = false
+
+
+func _build_main_menu() -> void:
+	_menu = CenterContainer.new()
+	_menu.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_menu)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SUNNY, 48, 40))
+	_menu.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 16)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(box)
+
+	var title := _make_label("PACK MULE", 80, SUNNY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_outline_color", INK)
+	title.add_theme_constant_override("outline_size", 14)
+	box.add_child(title)
+
+	var tagline := _make_label("STACK RIDICULOUS THINGS. DON'T LOOK DOWN.", 20, CREAM)
+	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(tagline)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 10)
+	box.add_child(spacer)
+
+	var play := _make_button("PLAY", LEAF)
+	play.add_theme_font_size_override("font_size", 34)
+	play.pressed.connect(func() -> void: start_requested.emit())
+	box.add_child(play)
+
+	var quit := _make_button("QUIT", Color(0.55, 0.55, 0.62))
+	quit.pressed.connect(func() -> void: get_tree().quit())
+	box.add_child(quit)
+
+	var controls := _make_label(HINT_TEXT, 14, Color(0.8, 0.83, 0.92))
+	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(controls)
+
+
+# --- Game-over panel ---------------------------------------------------------
 
 func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 	if not _go_built:
@@ -104,11 +214,9 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 	_game_over.visible = true
 
 
-# --- Game-over panel (the colorful frame around the postcard) ----------------
-
 func _build_game_over_ui() -> void:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, Color(0.0, 0.0, 0.0, 0.0)))
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SUNNY))
 
 	var margin := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
@@ -130,14 +238,12 @@ func _build_game_over_ui() -> void:
 	_go_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_go_subtitle)
 
-	# Postcard preview (the SubViewport texture), kept at the photo's aspect.
 	_pc_display = TextureRect.new()
 	_pc_display.custom_minimum_size = Vector2(460, 460 * POSTCARD_SIZE.y / POSTCARD_SIZE.x)
 	_pc_display.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_pc_display.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	box.add_child(_pc_display)
 
-	# Colorful stat chips.
 	var chips := HBoxContainer.new()
 	chips.add_theme_constant_override("separation", 14)
 	chips.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -146,7 +252,6 @@ func _build_game_over_ui() -> void:
 	chips.add_child(_make_chip("OBJECTS", LEAF))
 	chips.add_child(_make_chip("WEIGHT", TANGERINE))
 
-	# Buttons.
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 16)
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -187,19 +292,6 @@ func _make_chip(name_text: String, color: Color) -> PanelContainer:
 	return chip
 
 
-func _make_button(text: String, color: Color) -> Button:
-	var btn := Button.new()
-	btn.text = text
-	btn.add_theme_font_size_override("font_size", 24)
-	btn.add_theme_color_override("font_color", INK)
-	btn.add_theme_color_override("font_hover_color", INK)
-	btn.add_theme_color_override("font_pressed_color", INK)
-	btn.add_theme_stylebox_override("normal", _rounded(color, 16, color.darkened(0.3), 16, 10))
-	btn.add_theme_stylebox_override("hover", _rounded(color.lightened(0.12), 16, color.darkened(0.3), 16, 10))
-	btn.add_theme_stylebox_override("pressed", _rounded(color.darkened(0.12), 16, color.darkened(0.3), 16, 10))
-	return btn
-
-
 # --- Postcard (the baked, shareable image) -----------------------------------
 
 func _build_postcard(image: Image, stats: Dictionary) -> void:
@@ -228,49 +320,21 @@ func _build_postcard(image: Image, stats: Dictionary) -> void:
 		_pc_photo.clip_contents = true
 		root.add_child(_pc_photo)
 
-		# Title banner across the top of the photo.
-		var banner_bg := ColorRect.new()
-		banner_bg.color = Color(0.16, 0.15, 0.22, 0.55)
-		banner_bg.position = Vector2(PC_PAD, PC_PAD)
-		banner_bg.size = Vector2(POSTCARD_SIZE.x - 2 * PC_PAD, 66)
-		root.add_child(banner_bg)
-		_pc_banner = _make_label("GREETINGS FROM MT. MULE", 34, CREAM)
-		_pc_banner.position = banner_bg.position
-		_pc_banner.size = banner_bg.size
-		_pc_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_pc_banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		root.add_child(_pc_banner)
-
-		# A little postage stamp in the corner, for charm.
-		var stamp := ColorRect.new()
-		stamp.color = TANGERINE
-		stamp.position = Vector2(POSTCARD_SIZE.x - PC_PAD - 86, PC_PAD + 14)
-		stamp.size = Vector2(72, 86)
-		root.add_child(stamp)
-		var stamp_label := _make_label("MULE\nMAIL", 18, INK)
-		stamp_label.position = stamp.position
-		stamp_label.size = stamp.size
-		stamp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		stamp_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		root.add_child(stamp_label)
-
-		# Caption strip (the cream band below the photo).
-		var cap_y := POSTCARD_SIZE.y - PC_CAPTION_H
-		_pc_big = _make_label("MT. MULE", 44, INK)
-		_pc_big.position = Vector2(PC_PAD + 8, cap_y + 6)
-		root.add_child(_pc_big)
-		_pc_caption = _make_label("", 26, TANGERINE.darkened(0.25))
-		_pc_caption.position = Vector2(PC_PAD + 10, cap_y + 76)
+		# Caption band: just the run's stats, centered.
+		_pc_caption = _make_label("", 32, INK)
+		_pc_caption.position = Vector2(PC_PAD, POSTCARD_SIZE.y - PC_CAPTION_H)
+		_pc_caption.size = Vector2(POSTCARD_SIZE.x - 2 * PC_PAD, PC_CAPTION_H)
+		_pc_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_pc_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		root.add_child(_pc_caption)
 
 	if image != null:
 		_pc_photo.texture = ImageTexture.create_from_image(image)
-	_pc_caption.text = "%.1f M HIGH   ·   %d THINGS STACKED   ·   %d KG HAULED" % [
+	_pc_caption.text = "%.1f M  ·  %d OBJECTS  ·  %d KG" % [
 			float(stats["height"]), int(stats["objects"]), int(round(float(stats["weight"])))]
 
 
 func _on_save_pressed() -> void:
-	# Make sure the postcard has rendered, then grab and write it.
 	await RenderingServer.frame_post_draw
 	var img := _pc_vp.get_texture().get_image()
 	var dir := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
@@ -293,6 +357,19 @@ func _make_label(text: String, size: int, color: Color) -> Label:
 	label.add_theme_font_size_override("font_size", size)
 	label.add_theme_color_override("font_color", color)
 	return label
+
+
+func _make_button(text: String, color: Color) -> Button:
+	var btn := Button.new()
+	btn.text = text
+	btn.add_theme_font_size_override("font_size", 24)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		btn.add_theme_color_override(c, INK)
+	btn.add_theme_stylebox_override("normal", _rounded(color, 16, color.darkened(0.3), 18, 10))
+	btn.add_theme_stylebox_override("hover", _rounded(color.lightened(0.12), 16, color.darkened(0.3), 18, 10))
+	btn.add_theme_stylebox_override("pressed", _rounded(color.darkened(0.12), 16, color.darkened(0.3), 18, 10))
+	btn.add_theme_stylebox_override("focus", _rounded(Color(0, 0, 0, 0), 16, CREAM, 18, 10))
+	return btn
 
 
 func _rounded(bg: Color, radius: int, border: Color, pad_x := 0, pad_y := 0) -> StyleBoxFlat:

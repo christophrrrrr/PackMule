@@ -20,6 +20,7 @@ var _base: StackableObject
 
 
 func _ready() -> void:
+	_gm._start_game()  # skip the main menu
 	_gm.set_physics_process(false)  # no mouse: keep the ghost aiming frozen
 	print("[stickytest] started")
 
@@ -60,7 +61,7 @@ func _process(delta: float) -> void:
 		_saw_break = true  # the glued base piece is loose again
 	match _stage:
 		0:
-			if _gm._phase == 0 and _gm._ghost != null:
+			if _gm._phase == GameManager.Phase.AIMING and _gm._ghost != null:
 				_gm._place_object(_entry("Safe"),
 						Transform3D(Basis.IDENTITY, Vector3(0, _gm._base_top + 0.45, 0)))
 				_stage = 1
@@ -73,7 +74,7 @@ func _process(delta: float) -> void:
 				_stage = 2
 		2:
 			# Done once the game is out of SETTLING and nothing moves anymore.
-			if _gm._phase == 1:
+			if _gm._phase == GameManager.Phase.SETTLING:
 				_grace = 0.0
 				return
 			var all_resting := true

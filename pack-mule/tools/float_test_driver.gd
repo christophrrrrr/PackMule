@@ -22,6 +22,7 @@ var _tub: StackableObject
 func _ready() -> void:
 	# Unlike the other drivers, _physics_process stays ON: the integrity
 	# sweep lives there. The ghost aiming it also runs is harmless headless.
+	_gm._start_game()  # skip the main menu
 	print("[floattest] started")
 
 
@@ -67,7 +68,7 @@ func _process(delta: float) -> void:
 		_saw_unfloat = true
 	match _stage:
 		0:
-			if _gm._phase == 0 and _gm._ghost != null:
+			if _gm._phase == GameManager.Phase.AIMING and _gm._ghost != null:
 				_gm._place_object(_entry("Safe"),
 						Transform3D(Basis.IDENTITY, Vector3(0, _gm._base_top + 0.45, 0)))
 				_stage = 1
