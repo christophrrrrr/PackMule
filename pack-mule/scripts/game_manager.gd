@@ -17,15 +17,20 @@ const INTEGRITY_INTERVAL := 0.4  # seconds between floating-piece sweeps
 # The donkey stays at the origin; the mountain is built downward from it,
 # peak under the donkey's hooves. Everything below the cloud layer is
 # invisible and lethal.
-const MOUNTAIN_HEIGHT := 50.0
-const MOUNTAIN_WIDEN := 2.5      # extra horizontal scale: a broader, flatter peak
-const MOUNTAIN_SUMMIT_Y := 1.0   # apex sits this far above the hooves, so the
-                                 # rock fills the donkey's footprint (it sinks in)
-const CLOUD_LAYER_Y := -13.0     # top of the cloud sea, below the peak
-const KILL_TOP := -12.0          # reaching the cloud band = swallowed, gone
-const CLOUD_DISC_RADIUS := 85.0  # how far the cloud carpet spreads
-const CLOUD_GRID_STEP := 4.0     # spacing of carpet puffs (smaller = denser)
-const CLOUD_PUFF_SIZE := 7.5     # diameter of one carpet puff
+const MOUNTAIN_HEIGHT := 55.0
+const MOUNTAIN_WIDEN := 1.8      # horizontal scale: a steeper, more peak-like cone
+const MOUNTAIN_SUMMIT_Y := -0.3  # cone apex sits just BELOW the hooves, so no rock
+                                 # spike pokes through the donkey — the flat cap
+                                 # (below) is what it actually stands on
+const CAP_TOP_Y := 0.05          # flat rock summit platform: top just above feet
+const CAP_TOP_RADIUS := 2.8      # wide enough for the whole donkey footprint
+const CAP_BOTTOM_RADIUS := 7.0   # flares out and merges into the cone
+const CAP_HEIGHT := 9.0
+const CLOUD_LAYER_Y := -32.0     # cloud sea far below, so tall rock stays visible
+const KILL_TOP := -29.0          # reaching the cloud band = swallowed, gone
+const CLOUD_DISC_RADIUS := 130.0 # how far the cloud carpet spreads (to the horizon)
+const CLOUD_GRID_STEP := 5.5     # spacing of carpet puffs (smaller = denser)
+const CLOUD_PUFF_SIZE := 11.0    # diameter of one carpet puff
 
 enum Phase { AIMING, SETTLING, GAME_OVER }
 
@@ -346,16 +351,22 @@ func _setup_mountain() -> void:
 		return
 	var aabb := StackableObject.points_aabb(points)
 	var sf := MOUNTAIN_HEIGHT / aabb.size.y
-	# Widen horizontally so the summit is a broad cap, not a sharp point —
-	# the donkey's spread hooves then rest on rock instead of hovering.
 	var scale := Vector3(sf * MOUNTAIN_WIDEN, sf, sf * MOUNTAIN_WIDEN)
 	var peak := points[0]
 	for p in points:
 		if p.y > peak.y:
 			peak = p
 	model.scale = scale
-	# Put the summit just above the hooves so they sink into the rock.
+	# Apex sits just below the hooves so no rock spike pokes through the
+	# donkey; the flat cap built below is its actual footing.
 	model.position = -peak * scale + Vector3(0.0, MOUNTAIN_SUMMIT_Y, 0.0)
+
+	# Rock colour, so the peak reads as a mountain instead of blending into
+	# the white clouds.
+	var rock := StandardMaterial3D.new()
+	rock.albedo_color = Color(0.44, 0.41, 0.38)
+	rock.roughness = 1.0
+	_apply_material(model, rock)
 
 	var faces := PackedVector3Array()
 	_collect_faces(model, Transform3D.IDENTITY, faces)
@@ -371,6 +382,8 @@ func _setup_mountain() -> void:
 	slick.bounce = 0.0
 	_mountain.physics_material_override = slick
 
+	_add_summit_cap(rock)
+
 	# The old ground becomes the valley floor, far out of sight.
 	_ground.position.y = -MOUNTAIN_HEIGHT
 	# Kill volume: everything below the cloud layer, down to the valley.
@@ -381,6 +394,38 @@ func _setup_mountain() -> void:
 	kill_shape.position = Vector3(0.0, KILL_TOP - MOUNTAIN_HEIGHT / 2.0, 0.0)
 
 	_setup_clouds()
+
+
+## A flat-topped rock platform at the very summit. A cone tip can't hold a
+## 3 m donkey without either a gap (it floats) or a spike through its
+## belly; this gives a dependable level footing that flares out and merges
+## into the cone below, reading as a rocky peak.
+func _add_summit_cap(rock: StandardMaterial3D) -> void:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = CAP_TOP_RADIUS
+	mesh.bottom_radius = CAP_BOTTOM_RADIUS
+	mesh.height = CAP_HEIGHT
+	mesh.material = rock
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = Vector3(0.0, CAP_TOP_Y - CAP_HEIGHT / 2.0, 0.0)
+	_mountain.add_child(mi)
+
+	var shape := CylinderShape3D.new()
+	shape.radius = CAP_TOP_RADIUS
+	shape.height = CAP_HEIGHT
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	col.position = mi.position
+	_mountain.add_child(col)
+
+
+## Recursively overrides the material of every mesh in a subtree.
+func _apply_material(node: Node, mat: Material) -> void:
+	if node is MeshInstance3D:
+		(node as MeshInstance3D).material_override = mat
+	for child in node.get_children():
+		_apply_material(child, mat)
 
 
 ## A dense white carpet of cloud puffs filling a wide disc around the peak,

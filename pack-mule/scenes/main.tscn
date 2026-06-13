@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://ntrqrf7228vt" path="res://scripts/game_manager.gd" id="1"]
 [ext_resource type="Script" uid="uid://ccxpk62gvn86s" path="res://scripts/camera_rig.gd" id="2"]
 [ext_resource type="Script" uid="uid://cvkdef2dmtvie" path="res://scripts/hud.gd" id="3"]
-[ext_resource type="Script" path="res://scripts/modifier_wheel.gd" id="4"]
+[ext_resource type="Script" uid="uid://bid6itj21wboe" path="res://scripts/modifier_wheel.gd" id="4"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
 sky_top_color = Color(0.35, 0.55, 0.8, 1)
