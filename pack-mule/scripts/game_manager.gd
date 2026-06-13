@@ -22,10 +22,9 @@ const MOUNTAIN_WIDEN := 1.8      # horizontal scale: a steeper, more peak-like c
 const MOUNTAIN_SUMMIT_Y := -0.3  # cone apex sits just BELOW the hooves, so no rock
                                  # spike pokes through the donkey — the flat cap
                                  # (below) is what it actually stands on
-const CAP_TOP_Y := 0.05          # flat rock summit platform: top just above feet
-const CAP_TOP_RADIUS := 2.8      # wide enough for the whole donkey footprint
-const CAP_BOTTOM_RADIUS := 7.0   # flares out and merges into the cone
-const CAP_HEIGHT := 9.0
+const CAP_APEX_Y := 0.18         # top of the rounded rock summit, just above feet
+const CAP_RADIUS := 5.5          # dome radius: gentle under the donkey, steep at
+                                 # the sides so stray pieces slide off, not stick
 const CLOUD_LAYER_Y := -32.0     # cloud sea far below, so tall rock stays visible
 const KILL_TOP := -29.0          # reaching the cloud band = swallowed, gone
 const CLOUD_DISC_RADIUS := 130.0 # how far the cloud carpet spreads (to the horizon)
@@ -396,27 +395,27 @@ func _setup_mountain() -> void:
 	_setup_clouds()
 
 
-## A flat-topped rock platform at the very summit. A cone tip can't hold a
-## 3 m donkey without either a gap (it floats) or a spike through its
-## belly; this gives a dependable level footing that flares out and merges
-## into the cone below, reading as a rocky peak.
+## A rounded rock dome at the very summit. A cone tip can't hold a 3 m
+## donkey (it floats or a spike pokes through the belly) and a flat shelf
+## traps stray objects; a dome is gentle under the donkey's hooves yet
+## curves steeply at the sides, so anything that misses slides off. The
+## collision is an exact SphereShape3D so nothing clips into the visual.
 func _add_summit_cap(rock: StandardMaterial3D) -> void:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = CAP_TOP_RADIUS
-	mesh.bottom_radius = CAP_BOTTOM_RADIUS
-	mesh.height = CAP_HEIGHT
+	var center := Vector3(0.0, CAP_APEX_Y - CAP_RADIUS, 0.0)
+	var mesh := SphereMesh.new()
+	mesh.radius = CAP_RADIUS
+	mesh.height = CAP_RADIUS * 2.0
 	mesh.material = rock
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
-	mi.position = Vector3(0.0, CAP_TOP_Y - CAP_HEIGHT / 2.0, 0.0)
+	mi.position = center
 	_mountain.add_child(mi)
 
-	var shape := CylinderShape3D.new()
-	shape.radius = CAP_TOP_RADIUS
-	shape.height = CAP_HEIGHT
+	var shape := SphereShape3D.new()
+	shape.radius = CAP_RADIUS
 	var col := CollisionShape3D.new()
 	col.shape = shape
-	col.position = mi.position
+	col.position = center
 	_mountain.add_child(col)
 
 
