@@ -14,11 +14,23 @@ const YAW_SPEED := 2.6           # rad/s while holding Q/E
 const DONKEY_LENGTH := 3.0       # normalized donkey body length in meters
 const INTEGRITY_INTERVAL := 0.4  # seconds between floating-piece sweeps
 
+# The donkey stays at the origin; the mountain is built downward from it,
+# peak under the donkey's hooves. Everything below the cloud layer is
+# invisible and lethal.
+const MOUNTAIN_HEIGHT := 50.0
+const CLOUD_ALTITUDE := -15.0    # puffy clouds, relative to the peak
+const CLOUD_SEA_Y := -16.0       # opaque white layer hiding the ground
+const KILL_TOP := -20.0          # below the clouds: out of sight = gone
+const CLOUD_SIZE := 14.0         # normalized longest side of one puff
+const CLOUD_COUNT := 12
+
 enum Phase { AIMING, SETTLING, GAME_OVER }
 
 @onready var _camera: Camera3D = $CameraRig/Camera3D
 @onready var _hud: GameHud = $HUD
 @onready var _ground: StaticBody3D = $Ground
+@onready var _mountain: StaticBody3D = $Mountain
+@onready var _clouds: Node3D = $Clouds
 @onready var _donkey_base: StaticBody3D = $DonkeyBase
 @onready var _kill_zone: Area3D = $KillZone
 
@@ -40,6 +52,7 @@ var _integrity_timer := 0.0
 
 func _ready() -> void:
 	_rng.randomize()
+	_setup_mountain()
 	_setup_donkey()
 	_kill_zone.body_entered.connect(_on_kill_zone_body_entered)
 	_hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
@@ -170,8 +183,8 @@ func _update_ghost() -> void:
 	var normal: Vector3 = hit["normal"]
 	var pos: Vector3 = hit["position"]
 	var fits := _ghost.place_on(space, pos, normal)
-	var on_ground: bool = hit["collider"] == _ground
-	_ghost.set_valid(not on_ground and fits)
+	var on_terrain: bool = hit["collider"] == _ground or hit["collider"] == _mountain
+	_ghost.set_valid(not on_terrain and fits)
 
 
 func _spawn_next() -> void:
@@ -297,6 +310,99 @@ func _game_over(reason: String) -> void:
 	_hud.set_crosshair(false)
 	_hud.set_incoming("")
 	_hud.show_game_over(reason, _total_score(), _max_height)
+
+
+## Builds the world: the donkey stands on a mountain peak. The peak's
+## highest point is moved to the origin (so the donkey, camera, and all
+## height logic stay untouched), the old green ground drops to the
+## mountain's base, a cloud layer hides everything below the summit, and
+## the kill zone becomes the whole volume beneath the clouds.
+func _setup_mountain() -> void:
+	var model: Node3D = (load("res://assets/Mountain.glb") as PackedScene).instantiate()
+	_mountain.add_child(model)
+	var points := PackedVector3Array()
+	StackableObject.collect_hull_points(model, Transform3D.IDENTITY, points)
+	if points.is_empty():
+		push_error("Mountain.glb has no mesh geometry")
+		return
+	var aabb := StackableObject.points_aabb(points)
+	var sf := MOUNTAIN_HEIGHT / aabb.size.y
+	var peak := points[0]
+	for p in points:
+		if p.y > peak.y:
+			peak = p
+	model.scale = Vector3.ONE * sf
+	# The highest vertex lands at the origin, sunk slightly so the donkey's
+	# hooves rest in the rock instead of hovering on a single point.
+	model.position = -peak * sf + Vector3(0, -0.15, 0)
+
+	var faces := PackedVector3Array()
+	_collect_faces(model, Transform3D.IDENTITY, faces)
+	var trimesh := ConcavePolygonShape3D.new()
+	trimesh.set_faces(faces)
+	var col := CollisionShape3D.new()
+	col.shape = trimesh
+	_mountain.add_child(col)
+
+	# The old ground becomes the valley floor, far out of sight.
+	_ground.position.y = -MOUNTAIN_HEIGHT
+	# Kill volume: everything below the cloud layer, down to the valley.
+	var kill_shape: CollisionShape3D = _kill_zone.get_node("KillShape")
+	var kill_box := BoxShape3D.new()
+	kill_box.size = Vector3(400.0, MOUNTAIN_HEIGHT, 400.0)
+	kill_shape.shape = kill_box
+	kill_shape.position = Vector3(0.0, KILL_TOP - MOUNTAIN_HEIGHT / 2.0, 0.0)
+
+	_setup_clouds()
+
+
+## A solid white "cloud sea" plane plus a ring of puffy clouds around the
+## peak — the player can never see what is below.
+func _setup_clouds() -> void:
+	var sea_mesh := PlaneMesh.new()
+	sea_mesh.size = Vector2(600.0, 600.0)
+	var sea_mat := StandardMaterial3D.new()
+	sea_mat.albedo_color = Color(0.93, 0.95, 0.98)
+	sea_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sea_mesh.material = sea_mat
+	var sea := MeshInstance3D.new()
+	sea.mesh = sea_mesh
+	sea.position = Vector3(0.0, CLOUD_SEA_Y, 0.0)
+	_clouds.add_child(sea)
+
+	var template := Node3D.new()
+	var built := _normalized_visual("res://assets/Cloud.glb", CLOUD_SIZE, template)
+	if not built:
+		return
+	for i in CLOUD_COUNT:
+		var puff := template.duplicate() as Node3D
+		var angle := TAU * i / CLOUD_COUNT + _rng.randf_range(-0.2, 0.2)
+		var radius := _rng.randf_range(12.0, 38.0)
+		puff.position = Vector3(cos(angle) * radius,
+				CLOUD_ALTITUDE + _rng.randf_range(-2.0, 2.0), sin(angle) * radius)
+		puff.rotation.y = _rng.randf_range(0.0, TAU)
+		puff.scale = Vector3.ONE * _rng.randf_range(0.6, 1.1)
+		_clouds.add_child(puff)
+	template.free()
+
+
+## Loads a .glb purely as a visual, scaled so its longest side equals
+## `target_size` and recentered on `host`'s origin. Returns false if the
+## file has no meshes.
+func _normalized_visual(path: String, target_size: float, host: Node3D) -> bool:
+	var model: Node3D = (load(path) as PackedScene).instantiate()
+	host.add_child(model)
+	var points := PackedVector3Array()
+	StackableObject.collect_hull_points(model, Transform3D.IDENTITY, points)
+	if points.is_empty():
+		push_error("%s has no mesh geometry" % path)
+		return false
+	var aabb := StackableObject.points_aabb(points)
+	var longest := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+	var sf := target_size / longest
+	model.scale = Vector3.ONE * sf
+	model.position = -aabb.get_center() * sf
+	return true
 
 
 ## Builds the donkey base: normalized visual model, an exact trimesh hitbox

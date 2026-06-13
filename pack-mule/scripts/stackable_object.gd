@@ -92,6 +92,83 @@ static func collect_hull_points(node: Node, parent_xform: Transform3D, points: P
 		collect_hull_points(child, xform, points)
 
 
+## V-HACD decomposition of a .glb into convex parts (raw model space), so
+## hollow objects (tub, toilet, trashcan...) get real concave hitboxes
+## instead of a shrink-wrapped block. Expensive, so cached per path —
+## the cache survives scene reloads.
+static var _decomp_cache := {}
+
+static func decompose(path: String) -> Dictionary:
+	if _decomp_cache.has(path):
+		return _decomp_cache[path]
+	var model: Node3D = (load(path) as PackedScene).instantiate()
+	var parts: Array[PackedVector3Array] = []
+	_collect_convex_parts(model, Transform3D.IDENTITY, parts)
+	model.free()
+	var all_points := PackedVector3Array()
+	for part in parts:
+		all_points.append_array(part)
+	var result := {
+		"parts": parts,
+		"aabb": points_aabb(all_points) if not all_points.is_empty() else AABB(),
+	}
+	_decomp_cache[path] = result
+	return result
+
+
+static func _collect_convex_parts(node: Node, parent_xform: Transform3D, parts: Array[PackedVector3Array]) -> void:
+	var xform := parent_xform
+	if node is Node3D:
+		xform = parent_xform * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		var mi := node as MeshInstance3D
+		var settings := MeshConvexDecompositionSettings.new()
+		settings.max_convex_hulls = 8
+		settings.max_concavity = 0.02
+		settings.resolution = 200000
+		mi.create_multiple_convex_collisions(settings)
+		var found := false
+		for child in mi.get_children():
+			if child is not StaticBody3D:
+				continue
+			for col in child.get_children():
+				if col is CollisionShape3D and (col as CollisionShape3D).shape is ConvexPolygonShape3D:
+					var out := PackedVector3Array()
+					for p in ((col as CollisionShape3D).shape as ConvexPolygonShape3D).points:
+						out.append(xform * p)
+					if out.size() >= 3:
+						parts.append(out)
+						found = true
+		if not found:
+			# Decomposition failed (degenerate mesh): single hull fallback.
+			var hull := mi.mesh.create_convex_shape(true, true)
+			if hull is ConvexPolygonShape3D:
+				var out := PackedVector3Array()
+				for p in (hull as ConvexPolygonShape3D).points:
+					out.append(xform * p)
+				if out.size() >= 3:
+					parts.append(out)
+	for child in node.get_children():
+		_collect_convex_parts(child, xform, parts)
+
+
+## Completely flat parts (the rug has zero height) get padded to a minimum
+## thickness, centered on the original plane, so Jolt has a real volume.
+static func _ensure_thickness(points: PackedVector3Array) -> PackedVector3Array:
+	var aabb := points_aabb(points)
+	var pad := Vector3.ZERO
+	for axis in 3:
+		if aabb.size[axis] < 0.04:
+			pad[axis] = (0.04 - aabb.size[axis]) / 2.0
+	if pad == Vector3.ZERO:
+		return points
+	var out := PackedVector3Array()
+	for p in points:
+		out.append(p - pad)
+		out.append(p + pad)
+	return out
+
+
 static func points_aabb(points: PackedVector3Array) -> AABB:
 	var aabb := AABB(points[0], Vector3.ZERO)
 	for p in points:
@@ -100,26 +177,39 @@ static func points_aabb(points: PackedVector3Array) -> AABB:
 
 
 ## Instantiates the .glb under `host`, scales it so its longest side equals
-## `target_size`, and recenters it on the host's origin. Appends the
-## normalized hull vertices to `hull_out` and returns the half extents.
+## `target_size`, and recenters it on the host's origin. Returns
+## {"half_extents": Vector3, "parts": Array[PackedVector3Array],
+##  "points": PackedVector3Array} where parts are the normalized convex
+## decomposition pieces and points is their union (for bounds/snapping).
 ## Shared by the physics object and the blueprint ghost.
-static func build_normalized_model(host: Node3D, path: String, target_size: float, hull_out: PackedVector3Array) -> Vector3:
+static func build_normalized_model(host: Node3D, path: String, target_size: float) -> Dictionary:
 	var model: Node3D = (load(path) as PackedScene).instantiate()
 	host.add_child(model)
-	var points := PackedVector3Array()
-	collect_hull_points(model, Transform3D.IDENTITY, points)
-	if points.is_empty():
+	var decomp := decompose(path)
+	var raw_parts: Array[PackedVector3Array] = decomp["parts"]
+	if raw_parts.is_empty():
 		push_error("No mesh geometry found in %s" % path)
-		return Vector3.ZERO
-	var aabb := points_aabb(points)
+		return {"half_extents": Vector3.ZERO, "parts": [], "points": PackedVector3Array()}
+	var aabb: AABB = decomp["aabb"]
 	var longest := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
 	var sf := target_size / longest
 	var center := aabb.get_center()
 	model.scale = Vector3.ONE * sf
 	model.position = -center * sf
-	for p in points:
-		hull_out.append((p - center) * sf)
-	return aabb.size * sf * 0.5
+	var parts: Array[PackedVector3Array] = []
+	var union := PackedVector3Array()
+	for raw in raw_parts:
+		var out := PackedVector3Array()
+		for p in raw:
+			out.append((p - center) * sf)
+		out = _ensure_thickness(out)
+		parts.append(out)
+		union.append_array(out)
+	return {
+		"half_extents": aabb.size * sf * 0.5,
+		"parts": parts,
+		"points": union,
+	}
 
 
 func drop() -> void:
@@ -167,6 +257,9 @@ func break_loose(force := false) -> void:
 		freeze = false
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
+	# A long-static body is asleep; left sleeping, the settle check would
+	# re-glue it the very next tick without gravity ever acting.
+	sleeping = false
 	for d in deps:
 		d.break_loose()
 
@@ -273,14 +366,21 @@ func _on_body_entered(body: Node) -> void:
 
 
 func _build_model(path: String, target_size: float) -> void:
-	var hull_points := PackedVector3Array()
-	half_extents = build_normalized_model(self, path, target_size, hull_points)
-	if hull_points.is_empty():
+	var built := build_normalized_model(self, path, target_size)
+	half_extents = built["half_extents"]
+	var union: PackedVector3Array = built["points"]
+	if union.is_empty():
 		return
-	_hull.points = hull_points
-	var col := CollisionShape3D.new()
-	col.shape = _hull
-	add_child(col)
+	# Real collision is the convex decomposition (one shape per part), so
+	# hollow objects can hold things. The union hull stays as the cheap
+	# query shape for support probes and the integrity sweep.
+	_hull.points = union
+	for part: PackedVector3Array in built["parts"]:
+		var shape := ConvexPolygonShape3D.new()
+		shape.points = part
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		add_child(col)
 
 
 func _enter_held() -> void:

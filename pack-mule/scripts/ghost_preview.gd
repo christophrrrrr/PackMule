@@ -28,7 +28,8 @@ var valid := false
 var user_basis := Basis.IDENTITY
 
 var _mat := StandardMaterial3D.new()
-var _shape := ConvexPolygonShape3D.new()
+var _shape := ConvexPolygonShape3D.new()      # union hull: cheap first check
+var _part_shapes: Array[ConvexPolygonShape3D] = []
 
 
 static func create(p_entry: Dictionary, p_modifier: Dictionary = {}) -> GhostPreview:
@@ -80,7 +81,10 @@ func place_on(space: PhysicsDirectSpaceState3D, hit_pos: Vector3, normal: Vector
 		global_basis = rot * aligned
 		var origin := hit_pos + normal * (bottom_offset(normal) + PLACE_GAP)
 		global_position = origin
-		if not overlaps(space):
+		# The player's chosen pose gets the precise per-part check (so the
+		# ghost can fit into hollows like the tub); rotated rescue poses use
+		# the cheap union hull only.
+		if not overlaps(space, preferred):
 			return true
 		var step := ADJUST_STEP if preferred else ROT_ADJUST_STEP
 		var max_dist := MAX_ADJUST if preferred else ROT_MAX_ADJUST
@@ -88,7 +92,7 @@ func place_on(space: PhysicsDirectSpaceState3D, hit_pos: Vector3, normal: Vector
 			var dist := step
 			while dist <= max_dist:
 				global_position = origin + dir * dist
-				if not overlaps(space):
+				if not overlaps(space, preferred):
 					return true
 				dist += step
 	global_basis = aligned
@@ -124,11 +128,25 @@ func bottom_offset(normal: Vector3) -> float:
 	return -lowest
 
 
-## True if the hull at the ghost's current transform overlaps any world
-## geometry (ground, donkey, or placed objects).
-func overlaps(space: PhysicsDirectSpaceState3D) -> bool:
+## True if the ghost at its current transform overlaps any world geometry
+## (terrain, donkey, or placed objects). The union hull is checked first;
+## when `precise`, a union hit is then verified against the decomposed
+## parts, so the ghost can nestle into hollows (e.g. a duck inside the
+## tub's basin) where only the union would collide.
+func overlaps(space: PhysicsDirectSpaceState3D, precise := true) -> bool:
+	if not _shape_hits(space, _shape):
+		return false
+	if not precise or _part_shapes.is_empty():
+		return true
+	for shape in _part_shapes:
+		if _shape_hits(space, shape):
+			return true
+	return false
+
+
+func _shape_hits(space: PhysicsDirectSpaceState3D, shape: ConvexPolygonShape3D) -> bool:
 	var query := PhysicsShapeQueryParameters3D.new()
-	query.shape = _shape
+	query.shape = shape
 	query.transform = global_transform
 	query.collision_mask = 1 | 2
 	return not space.intersect_shape(query, 1).is_empty()
@@ -136,9 +154,14 @@ func overlaps(space: PhysicsDirectSpaceState3D) -> bool:
 
 func _build() -> void:
 	var target: float = entry["size"] * modifier.get("size_mul", 1.0)
-	half_extents = StackableObject.build_normalized_model(
-			self, entry["path"], target, hull_points)
+	var built := StackableObject.build_normalized_model(self, entry["path"], target)
+	half_extents = built["half_extents"]
+	hull_points = built["points"]
 	_shape.points = hull_points
+	for part: PackedVector3Array in built["parts"]:
+		var shape := ConvexPolygonShape3D.new()
+		shape.points = part
+		_part_shapes.append(shape)
 	_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_mat.albedo_color = COLOR_VALID

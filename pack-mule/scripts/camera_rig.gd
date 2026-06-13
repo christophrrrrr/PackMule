@@ -13,8 +13,8 @@ const SPEED_STEP := 1.25
 const SPRINT_MULT := 2.5
 const MAX_PITCH := 1.45
 
-const START_POSITION := Vector3(5.0, 3.5, 7.0)
-const START_LOOK_AT := Vector3(0.0, 1.5, 0.0)
+const START_POSITION := Vector3(5.0, 5.0, 7.0)
+const START_LOOK_AT := Vector3(0.0, 2.0, 0.0)
 
 var _speed := 8.0
 var _yaw := 0.0

@@ -59,6 +59,12 @@ func _process(delta: float) -> void:
 		print("[floattest] TIMEOUT at stage ", _stage)
 		get_tree().quit(1)
 		return
+	# From the moment the Safe is knocked loose (stage 3+), any tub
+	# unfreeze is the sweep doing its job — the support edges are severed,
+	# so nothing else can wake it.
+	if _stage >= 3 and _tub != null \
+			and _tub.state != StackableObject.State.SETTLED:
+		_saw_unfloat = true
 	match _stage:
 		0:
 			if _gm._phase == 0 and _gm._ghost != null:
@@ -91,8 +97,8 @@ func _process(delta: float) -> void:
 				_stage = 4
 		4:
 			# The Tub must come loose (FALLING or FALLEN) — not stay glued in air.
-			if _tub.state != StackableObject.State.SETTLED:
-				_saw_unfloat = true
+			if _saw_unfloat:
+				_grace = 0.0
 				_stage = 5
 		5:
 			# Let everything land, then verify no settled piece floats.

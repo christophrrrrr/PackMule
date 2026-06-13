@@ -12,7 +12,7 @@ const ENTRIES := [
 	{
 		"name": "Tiny",
 		"color": Color(0.45, 0.75, 1.0),
-		"size_mul": 0.55, "mass_mul": 0.166,
+		"size_mul": 0.35, "mass_mul": 0.043,
 		"friction": -1.0, "no_glue": false, "super_glue": false,
 	},
 	{
@@ -28,7 +28,7 @@ const ENTRIES := [
 		"friction": -1.0, "no_glue": false, "super_glue": false,
 	},
 	{
-		"name": "Lead",
+		"name": "Heavy",
 		"color": Color(0.45, 0.45, 0.55),
 		"size_mul": 1.0, "mass_mul": 3.0,
 		"friction": -1.0, "no_glue": false, "super_glue": false,
