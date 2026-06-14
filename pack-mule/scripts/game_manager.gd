@@ -76,6 +76,7 @@ func _ready() -> void:
 	_kill_zone.body_entered.connect(_on_kill_zone_body_entered)
 	_hud.restart_requested.connect(_on_restart)
 	_hud.start_requested.connect(_start_game)
+	_hud.to_main_menu_requested.connect(_to_main_menu)
 	_hud.wheel_landed.connect(_on_wheel_landed)
 	if _autostart:
 		_autostart = false
@@ -98,10 +99,18 @@ func _start_game() -> void:
 	_camera_rig.set_process(true)
 	_hud.hide_main_menu()
 	_hud.set_in_game_hud_visible(true)
+	_hud.set_in_run(true)
 	Sfx.start_wind()
 	_refresh_hud()
 	_refresh_modifier_label()
 	_spawn_next()
+
+
+func _to_main_menu() -> void:
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	_autostart = false
+	get_tree().reload_current_scene()
 
 
 func _on_restart() -> void:
@@ -377,6 +386,7 @@ func _game_over(reason: String) -> void:
 	if _ghost != null:
 		_ghost.queue_free()
 		_ghost = null
+	_hud.set_in_run(false)        # no pausing on the game-over screen
 	Sfx.stop_wind()
 	Sfx.play("sting")
 	# Freeze the whole scene so the photo is crisp, then frame and shoot the
@@ -528,6 +538,7 @@ func _setup_mountain() -> void:
 	var col := CollisionShape3D.new()
 	col.shape = trimesh
 	_mountain.add_child(col)
+	_mountain.add_to_group("mountain")  # so impacts here play the stony sound
 	# Frictionless rock: anything that misses the tower slides off the peak
 	# and down through the clouds instead of sticking to the slope.
 	var slick := PhysicsMaterial.new()

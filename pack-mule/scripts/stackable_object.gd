@@ -408,13 +408,15 @@ func _register_supports() -> void:
 func _on_body_entered(body: Node) -> void:
 	if state == State.HELD:
 		return
-	# Clatter when this piece hits something hard (tower, rock, another
-	# object) — the chaos of a tumble, throttled so it never machine-guns.
+	# Clatter when this piece hits something hard, throttled so it never
+	# machine-guns. Hitting the bare mountain gives a stony "rock" thud;
+	# hitting the tower / another object gives the woody "thunk".
 	if _impact_cooldown <= 0.0 and _speed_last_tick >= IMPACT_MIN_SPEED:
 		_impact_cooldown = IMPACT_COOLDOWN
 		var pitch := clampf(remap(mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6)
 		var vol := clampf(remap(_speed_last_tick, 1.6, 10.0, -10.0, -2.0), -12.0, -2.0)
-		Sfx.play("thunk", pitch * randf_range(0.95, 1.05), vol)
+		var snd := "rock" if body.is_in_group("mountain") else "thunk"
+		Sfx.play(snd, pitch * randf_range(0.95, 1.05), vol)
 	if _super_glue and state == State.FALLING:
 		_settle_now()
 		return

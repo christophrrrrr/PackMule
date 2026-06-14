@@ -21,4 +21,6 @@ const ENTRIES := [
 	{"name": "Table", "path": "res://assets/Table.glb", "size": 1.6, "mass": 15.0},
 	{"name": "Toilet", "path": "res://assets/Toilet.glb", "size": 0.9, "mass": 25.0},
 	{"name": "Trashcan", "path": "res://assets/Trashcan.glb", "size": 1.0, "mass": 12.0},
+	{"name": "Bear", "path": "res://assets/Bear.glb", "size": 2.0, "mass": 140.0},
+	{"name": "Grill", "path": "res://assets/Grill.glb", "size": 1.2, "mass": 30.0},
 ]

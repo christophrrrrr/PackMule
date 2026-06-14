@@ -7,6 +7,7 @@ extends CanvasLayer
 
 signal restart_requested
 signal start_requested
+signal to_main_menu_requested
 signal wheel_landed(modifier: Dictionary)
 
 # Cartoon palette.
@@ -18,7 +19,7 @@ const SKY := Color(0.36, 0.74, 1.0)
 const LEAF := Color(0.42, 0.80, 0.36)
 const TANGERINE := Color(1.0, 0.55, 0.21)
 
-const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   LMB PLACE   ·   TAB SPIN WHEEL   ·   ESC FREE CURSOR"
+const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   LMB PLACE   ·   TAB SPIN WHEEL   ·   ESC PAUSE"
 const POSTCARD_SIZE := Vector2i(1024, 686)  # photo area below is 16:9
 const PC_PAD := 22
 const PC_CAPTION_H := 88
@@ -47,9 +48,15 @@ var _gallery_counter: Label
 var _gallery_files: PackedStringArray
 var _gallery_index := 0
 var _settings: CenterContainer
+var _settings_return: CenterContainer  # panel to show when leaving settings
 var _listening := ""              # action currently waiting for a new key
 var _listening_btn: Button
 var _bind_buttons := {}
+
+# Pause.
+var _pause: CenterContainer
+var _in_run := false              # a run is active (pausable)
+var _paused := false
 
 # Game-over panel.
 var _go_built := false
@@ -67,9 +74,20 @@ var _pc_caption: Label
 
 
 func _ready() -> void:
+	# The HUD keeps running while the tree is paused so the pause menu works;
+	# the wheel still pauses with the game.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_game_over.visible = false
+	_wheel.process_mode = Node.PROCESS_MODE_PAUSABLE
 	_wheel.landed.connect(func(modifier: Dictionary) -> void: wheel_landed.emit(modifier))
 	_build_in_game_hud()
+
+
+## A run is active (so Esc should pause). Cleared at game over / main menu.
+func set_in_run(value: bool) -> void:
+	_in_run = value
+	if not value:
+		_paused = false
 
 
 # --- In-game readouts --------------------------------------------------------
@@ -169,6 +187,8 @@ func hide_main_menu() -> void:
 		_gallery.visible = false
 	if _settings != null:
 		_settings.visible = false
+	if _pause != null:
+		_pause.visible = false
 
 
 func _build_main_menu() -> void:
@@ -330,10 +350,11 @@ func _autosave_gallery() -> void:
 
 # --- Settings ----------------------------------------------------------------
 
-func _open_settings() -> void:
+func _open_settings(return_to: CenterContainer = null) -> void:
 	if _settings == null:
 		_build_settings()
-	_menu.visible = false
+	_settings_return = return_to if return_to != null else _menu
+	_settings_return.visible = false
 	_settings.visible = true
 
 
@@ -399,7 +420,7 @@ func _build_settings() -> void:
 	reset.pressed.connect(_reset_binds)
 	buttons.add_child(reset)
 	var back := _make_button("BACK", LEAF)
-	back.pressed.connect(_back_to_menu.bind(_settings))
+	back.pressed.connect(_back_from_settings)
 	buttons.add_child(back)
 
 
@@ -437,20 +458,92 @@ func _back_to_menu(panel: CenterContainer) -> void:
 	_menu.visible = true
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if _listening.is_empty():
+func _back_from_settings() -> void:
+	_settings.visible = false
+	if _settings_return != null:
+		_settings_return.visible = true
+
+
+# --- Pause -------------------------------------------------------------------
+
+func _toggle_pause() -> void:
+	if not _in_run:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		get_viewport().set_input_as_handled()
-		if (event as InputEventKey).keycode != KEY_ESCAPE:
+	_paused = not _paused
+	get_tree().paused = _paused
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _paused else Input.MOUSE_MODE_CAPTURED
+	if _pause == null:
+		_build_pause()
+	_pause.visible = _paused
+
+
+func _resume() -> void:
+	if _paused:
+		_toggle_pause()
+
+
+func _build_pause() -> void:
+	_pause = CenterContainer.new()
+	_pause.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause.visible = false
+	add_child(_pause)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SUNNY, 44, 36))
+	_pause.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 14)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(box)
+
+	var title := _make_label("PAUSED", 54, SUNNY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_outline_color", INK)
+	title.add_theme_constant_override("outline_size", 10)
+	box.add_child(title)
+
+	var resume := _make_button("RESUME", LEAF)
+	resume.add_theme_font_size_override("font_size", 28)
+	resume.pressed.connect(_resume)
+	box.add_child(resume)
+	var settings := _make_button("SETTINGS", TANGERINE)
+	settings.pressed.connect(func() -> void: _open_settings(_pause))
+	box.add_child(settings)
+	var menu := _make_button("MAIN MENU", SKY)
+	menu.pressed.connect(func() -> void: to_main_menu_requested.emit())
+	box.add_child(menu)
+	var quit := _make_button("QUIT", Color(0.55, 0.55, 0.62))
+	quit.pressed.connect(func() -> void: get_tree().quit())
+	box.add_child(quit)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Rebinding a key: capture the next key/button press.
+	if not _listening.is_empty():
+		if event is InputEventKey and event.pressed and not event.echo:
+			get_viewport().set_input_as_handled()
+			if (event as InputEventKey).keycode != KEY_ESCAPE:
+				GameSettings.rebind(_listening, event)
+			_listening_btn.text = GameSettings.binding_text(_listening)
+			_listening = ""
+		elif event is InputEventMouseButton and event.pressed:
+			get_viewport().set_input_as_handled()
 			GameSettings.rebind(_listening, event)
-		_listening_btn.text = GameSettings.binding_text(_listening)
-		_listening = ""
-	elif event is InputEventMouseButton and event.pressed:
+			_listening_btn.text = GameSettings.binding_text(_listening)
+			_listening = ""
+		return
+	# Esc is the universal "back / pause".
+	if event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).keycode == KEY_ESCAPE:
+		if _settings != null and _settings.visible:
+			_back_from_settings()
+		elif _gallery != null and _gallery.visible:
+			_back_to_menu(_gallery)
+		elif _in_run:
+			_toggle_pause()
+		else:
+			return
 		get_viewport().set_input_as_handled()
-		GameSettings.rebind(_listening, event)
-		_listening_btn.text = GameSettings.binding_text(_listening)
-		_listening = ""
 
 
 # --- Game-over panel ---------------------------------------------------------
@@ -532,6 +625,9 @@ func _build_game_over_ui() -> void:
 	var again_btn := _make_button("STACK AGAIN", LEAF)
 	again_btn.pressed.connect(func() -> void: restart_requested.emit())
 	buttons.add_child(again_btn)
+	var menu_btn := _make_button("MAIN MENU", TANGERINE)
+	menu_btn.pressed.connect(func() -> void: to_main_menu_requested.emit())
+	buttons.add_child(menu_btn)
 
 	_saved_label = _make_label("", 16, Color(0.85, 0.9, 1.0))
 	_saved_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

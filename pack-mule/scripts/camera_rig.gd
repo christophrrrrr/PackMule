@@ -3,8 +3,7 @@ extends Node3D
 
 ## Always-on free-fly camera: the mouse looks around (cursor captured),
 ## WASD flies, Space rises, Ctrl descends, Shift sprints, and the mouse
-## wheel adjusts fly speed. Esc frees the cursor (aim with the cursor
-## instead); Esc again returns to mouse-look.
+## wheel adjusts fly speed. (Esc is handled by the HUD: it pauses.)
 
 const LOOK_SENSITIVITY := 0.0035
 const MIN_SPEED := 2.0
@@ -36,11 +35,7 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo \
-			and event.keycode == KEY_ESCAPE:
-		var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if captured else Input.MOUSE_MODE_CAPTURED
-	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_yaw -= event.relative.x * LOOK_SENSITIVITY
 		_pitch = clampf(_pitch - event.relative.y * LOOK_SENSITIVITY, -MAX_PITCH, MAX_PITCH)
 		rotation = Vector3(_pitch, _yaw, 0.0)

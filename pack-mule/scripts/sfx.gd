@@ -23,6 +23,7 @@ func _ready() -> void:
 	# No audio device in headless test runs — stay silent but harmless.
 	_enabled = DisplayServer.get_name() != "headless"
 	_streams["thunk"] = _thunk()
+	_streams["rock"] = _rock()
 	_streams["crash"] = _crash()
 	_streams["tick"] = _tick()
 	_streams["ding"] = _ding()
@@ -97,6 +98,24 @@ func _thunk() -> AudioStreamWAV:
 		var body := sin(TAU * f * t)
 		var click := (randf() * 2.0 - 1.0) * exp(-t * 130.0) * 0.3
 		s[i] = (body * 0.8 + click) * env * 0.7
+	return _wav(s)
+
+
+## A dull, gritty stone thud — an object striking the bare mountain. Darker
+## and crunchier than the tonal "thunk" of landing on the tower.
+func _rock() -> AudioStreamWAV:
+	var dur := 0.18
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var env := exp(-t * 30.0)
+		# Low-passed noise = a "stony" crunch rather than a white hiss.
+		lp = lp * 0.6 + (randf() * 2.0 - 1.0) * 0.4
+		var thud := sin(TAU * 68.0 * t) * 0.4
+		s[i] = (lp * 0.7 + thud) * env * 0.6
 	return _wav(s)
 
 
