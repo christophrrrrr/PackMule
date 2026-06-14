@@ -56,6 +56,7 @@ var _gallery_files: PackedStringArray
 var _gallery_index := 0
 var _settings: CenterContainer
 var _settings_return: CenterContainer  # panel to show when leaving settings
+var _odds_return: CenterContainer      # panel to show when leaving odds
 var _listening := ""              # action currently waiting for a new key
 var _listening_btn: Button
 var _bind_buttons := {}
@@ -318,58 +319,64 @@ func _build_main_menu() -> void:
 	add_child(_menu)
 
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SUNNY, 48, 40))
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY, 80, 64, 18))
 	_menu.add_child(panel)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 16)
+	box.add_theme_constant_override("separation", 20)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	panel.add_child(box)
 
-	var title := _make_label("PACK MULE", 80, SUNNY)
+	var title := _make_label("PACK MULE", 104, SUNNY)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_outline_color", INK)
-	title.add_theme_constant_override("outline_size", 14)
+	title.add_theme_constant_override("outline_size", 18)
 	box.add_child(title)
 
-	var tagline := _make_label("STACK RIDICULOUS THINGS. DON'T LOOK DOWN.", 20, CREAM)
+	var tagline := _make_label("STACK RIDICULOUS THINGS. DON'T LOOK DOWN.", 24, CREAM)
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(tagline)
 
-	var best := _make_label("BEST  %.1f M   ·   $%s" % [GameSettings.get_record(), _money_str(GameSettings.get_score_record())], 22, SUNNY)
+	var best := _make_label("BEST  %.1f M   ·   $%s" % [GameSettings.get_record(), _money_str(GameSettings.get_score_record())], 26, SUNNY)
 	best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(best)
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 6)
-	box.add_child(spacer)
+	box.add_child(_divider())
 
 	var play := _make_button("PLAY", LEAF)
-	play.add_theme_font_size_override("font_size", 34)
+	play.add_theme_font_size_override("font_size", 48)
+	play.custom_minimum_size = Vector2(440, 0)
 	play.pressed.connect(func() -> void: start_requested.emit())
 	box.add_child(play)
 
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
+	row.add_theme_constant_override("separation", 20)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(row)
 	var gallery_btn := _make_button("GALLERY", SKY)
+	gallery_btn.custom_minimum_size = Vector2(210, 0)
 	gallery_btn.pressed.connect(_open_gallery)
 	row.add_child(gallery_btn)
-	var odds_btn := _make_button("ODDS", LEAF)
-	odds_btn.pressed.connect(_open_odds)
-	row.add_child(odds_btn)
 	var settings_btn := _make_button("SETTINGS", TANGERINE)
+	settings_btn.custom_minimum_size = Vector2(210, 0)
 	settings_btn.pressed.connect(_open_settings.bind(null))
 	row.add_child(settings_btn)
 
-	var quit := _make_button("QUIT", Color(0.55, 0.55, 0.62))
+	var quit := _make_button("QUIT", Color(0.5, 0.5, 0.58))
 	quit.pressed.connect(func() -> void: get_tree().quit())
 	box.add_child(quit)
 
-	var controls := _make_label(HINT_TEXT, 14, Color(0.8, 0.83, 0.92))
+	var controls := _make_label(HINT_TEXT, 15, Color(0.8, 0.83, 0.92))
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(controls)
+
+
+## A thin accent divider line for menu panels.
+func _divider() -> Control:
+	var line := ColorRect.new()
+	line.color = Color(1, 1, 1, 0.12)
+	line.custom_minimum_size = Vector2(0, 3)
+	return line
 
 
 # --- Tower gallery -----------------------------------------------------------
@@ -478,12 +485,19 @@ func _autosave_gallery() -> void:
 
 # --- Odds (item rarity) ------------------------------------------------------
 
-func _open_odds() -> void:
+func _open_odds(return_to: CenterContainer = null) -> void:
 	if _odds == null:
 		_build_odds()
-	_menu.visible = false
+	_odds_return = return_to if return_to != null else _menu
+	_odds_return.visible = false
 	_odds.visible = true
 	_refresh_odds_pcts()
+
+
+func _back_from_odds() -> void:
+	_odds.visible = false
+	if _odds_return != null:
+		_odds_return.visible = true
 
 
 func _build_odds() -> void:
@@ -539,7 +553,7 @@ func _build_odds() -> void:
 	reset.pressed.connect(_reset_odds)
 	buttons.add_child(reset)
 	var back := _make_button("BACK", LEAF)
-	back.pressed.connect(_back_to_menu.bind(_odds))
+	back.pressed.connect(_back_from_odds)
 	buttons.add_child(back)
 
 
@@ -551,10 +565,11 @@ func _on_odds_changed(value: float, entry_name: String) -> void:
 func _reset_odds() -> void:
 	GameSettings.reset_weights()
 	# Rebuild the screen so sliders snap back to defaults.
+	var ret := _odds_return
 	_odds.queue_free()
 	_odds = null
 	_odds_pct.clear()
-	_open_odds()
+	_open_odds(ret)
 
 
 func _refresh_odds_pcts() -> void:
@@ -630,6 +645,13 @@ func _build_settings() -> void:
 		btn.pressed.connect(_begin_listen.bind(action, btn))
 		_bind_buttons[action] = btn
 		grid.add_child(btn)
+
+	var gap2 := Control.new()
+	gap2.custom_minimum_size = Vector2(0, 8)
+	box.add_child(gap2)
+	var odds_btn := _make_button("ITEM ODDS", SKY)
+	odds_btn.pressed.connect(func() -> void: _open_odds(_settings))
+	box.add_child(odds_btn)
 
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 16)
@@ -711,40 +733,38 @@ func _build_pause() -> void:
 	add_child(_pause)
 
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SUNNY, 44, 36))
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY, 72, 56, 18))
 	_pause.add_child(panel)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 14)
+	box.add_theme_constant_override("separation", 20)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	panel.add_child(box)
 
-	var title := _make_label("PAUSED", 54, SUNNY)
+	var title := _make_label("PAUSED", 72, SUNNY)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_outline_color", INK)
-	title.add_theme_constant_override("outline_size", 10)
+	title.add_theme_constant_override("outline_size", 14)
 	box.add_child(title)
 
+	box.add_child(_divider())
+
 	var resume := _make_button("RESUME", LEAF)
-	resume.add_theme_font_size_override("font_size", 28)
+	resume.add_theme_font_size_override("font_size", 34)
+	resume.custom_minimum_size = Vector2(360, 0)
 	resume.pressed.connect(_resume)
 	box.add_child(resume)
-	var cash := _make_button("CASH OUT", SUNNY)
-	cash.pressed.connect(func() -> void:
-		cash_out_requested.emit()
-		_resume())
-	box.add_child(cash)
 	var photo := _make_button("PHOTO MODE", SKY)
+	photo.custom_minimum_size = Vector2(360, 0)
 	photo.pressed.connect(start_photo_mode)
 	box.add_child(photo)
 	var settings := _make_button("SETTINGS", TANGERINE)
+	settings.custom_minimum_size = Vector2(360, 0)
 	settings.pressed.connect(func() -> void: _open_settings(_pause))
 	box.add_child(settings)
-	var menu := _make_button("MAIN MENU", SKY)
+	var menu := _make_button("MAIN MENU", Color(0.5, 0.5, 0.58))
+	menu.custom_minimum_size = Vector2(360, 0)
 	menu.pressed.connect(func() -> void: to_main_menu_requested.emit())
 	box.add_child(menu)
-	var quit := _make_button("QUIT", Color(0.55, 0.55, 0.62))
-	quit.pressed.connect(func() -> void: get_tree().quit())
-	box.add_child(quit)
 
 
 ## Photo mode: frozen scene, free camera, hidden UI, snap a shot.
@@ -831,7 +851,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Esc is the universal "back / pause".
 	if event is InputEventKey and event.pressed and not event.echo \
 			and (event as InputEventKey).keycode == KEY_ESCAPE:
-		if _settings != null and _settings.visible:
+		if _odds != null and _odds.visible:
+			_back_from_odds()
+		elif _settings != null and _settings.visible:
 			_back_from_settings()
 		elif _gallery != null and _gallery.visible:
 			_back_to_menu(_gallery)
@@ -1036,17 +1058,17 @@ func _make_label(text: String, size: int, color: Color) -> Label:
 func _make_button(text: String, color: Color) -> Button:
 	var btn := Button.new()
 	btn.text = text
-	btn.add_theme_font_size_override("font_size", 24)
+	btn.add_theme_font_size_override("font_size", 28)
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		btn.add_theme_color_override(c, INK)
-	btn.add_theme_stylebox_override("normal", _rounded(color, 16, color.darkened(0.3), 18, 10))
-	btn.add_theme_stylebox_override("hover", _rounded(color.lightened(0.12), 16, color.darkened(0.3), 18, 10))
-	btn.add_theme_stylebox_override("pressed", _rounded(color.darkened(0.12), 16, color.darkened(0.3), 18, 10))
-	btn.add_theme_stylebox_override("focus", _rounded(Color(0, 0, 0, 0), 16, CREAM, 18, 10))
+	btn.add_theme_stylebox_override("normal", _rounded(color, 18, color.darkened(0.3), 26, 14, 5))
+	btn.add_theme_stylebox_override("hover", _rounded(color.lightened(0.12), 18, color.darkened(0.3), 26, 14, 6))
+	btn.add_theme_stylebox_override("pressed", _rounded(color.darkened(0.12), 18, color.darkened(0.3), 26, 14, 2))
+	btn.add_theme_stylebox_override("focus", _rounded(Color(0, 0, 0, 0), 18, CREAM, 26, 14))
 	return btn
 
 
-func _rounded(bg: Color, radius: int, border: Color, pad_x := 0, pad_y := 0) -> StyleBoxFlat:
+func _rounded(bg: Color, radius: int, border: Color, pad_x := 0, pad_y := 0, shadow := 0) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
 	sb.set_corner_radius_all(radius)
@@ -1059,4 +1081,8 @@ func _rounded(bg: Color, radius: int, border: Color, pad_x := 0, pad_y := 0) -> 
 	if pad_y > 0:
 		sb.content_margin_top = pad_y
 		sb.content_margin_bottom = pad_y
+	if shadow > 0:
+		sb.shadow_size = shadow
+		sb.shadow_color = Color(0.0, 0.0, 0.0, 0.35)
+		sb.shadow_offset = Vector2(0, shadow * 0.5)
 	return sb

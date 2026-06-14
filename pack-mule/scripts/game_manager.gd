@@ -844,6 +844,63 @@ func _setup_mountain() -> void:
 	kill_shape.position = Vector3(0.0, KILL_TOP - MOUNTAIN_HEIGHT / 2.0, 0.0)
 
 	_setup_clouds()
+	_setup_atmosphere()
+
+
+## Horizon haze + a ring of distant peaks, so beyond the cloud sea reads as
+## an endless mountain range instead of empty grey sky.
+func _setup_atmosphere() -> void:
+	var env := ($WorldEnvironment as WorldEnvironment).environment
+	if env != null:
+		env.fog_enabled = true
+		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+		env.fog_light_color = Color(0.80, 0.86, 0.93)
+		env.fog_density = 0.0032
+		env.fog_aerial_perspective = 0.5
+		env.fog_sky_affect = 0.25
+		if env.sky != null and env.sky.sky_material is ProceduralSkyMaterial:
+			var sky := env.sky.sky_material as ProceduralSkyMaterial
+			sky.sky_horizon_color = Color(0.82, 0.88, 0.94)
+			sky.ground_horizon_color = Color(0.82, 0.88, 0.94)
+
+	var scene := load("res://assets/Mountain.glb") as PackedScene
+	var haze := Color(0.74, 0.81, 0.9)
+	var rock := Color(0.46, 0.53, 0.64)
+	for i in 16:
+		var holder := Node3D.new()
+		var model: Node3D = scene.instantiate()
+		holder.add_child(model)
+		var pts := PackedVector3Array()
+		StackableObject.collect_hull_points(model, Transform3D.IDENTITY, pts)
+		if pts.is_empty():
+			holder.free()
+			continue
+		var aabb := StackableObject.points_aabb(pts)
+		var height := _rng.randf_range(40.0, 95.0)
+		var sf := height / aabb.size.y
+		var peak := pts[0]
+		for p in pts:
+			if p.y > peak.y:
+				peak = p
+		var widen := _rng.randf_range(1.2, 2.2)
+		model.scale = Vector3(sf * widen, sf, sf * widen)
+		model.position = Vector3(-aabb.get_center().x * sf * widen, -peak.y * sf,
+				-aabb.get_center().z * sf * widen)
+		var ang := TAU * i / 16.0 + _rng.randf_range(-0.18, 0.18)
+		var dist := _rng.randf_range(150.0, 260.0)
+		holder.position = Vector3(cos(ang) * dist, _rng.randf_range(-8.0, 16.0), sin(ang) * dist)
+		holder.rotation.y = _rng.randf_range(0.0, TAU)
+		# Atmospheric perspective: farther peaks fade toward the haze colour.
+		var tint := rock.lerp(haze, clampf((dist - 150.0) / 130.0, 0.0, 0.85))
+		_apply_material(holder, _flat_material(tint))
+		_clouds.add_child(holder)
+
+
+func _flat_material(color: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 1.0
+	return mat
 
 
 ## A rounded rock dome at the very summit. A cone tip can't hold a 3 m
