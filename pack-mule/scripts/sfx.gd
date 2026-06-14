@@ -37,6 +37,11 @@ func _ready() -> void:
 	_streams["glass"] = _file_or("glass", _glass())
 	_streams["piano"] = _file_or("piano", _piano())
 	_streams["critter"] = _file_or("critter", _critter())
+	# Per-animal sounds (their own file, else the generic critter).
+	_streams["cow"] = _file_or("cow", _critter())
+	_streams["bear"] = _file_or("bear", _critter())
+	_streams["trex"] = _file_or("trex", _critter())
+	_streams["alien"] = _file_or("alien", _critter())
 	_streams["rock"] = _file_or("rock", _rock())
 	_streams["crash"] = _file_or("crash", _crash())
 	_streams["thunder"] = _file_or("thunder", _thunder())
@@ -67,10 +72,11 @@ func _ready() -> void:
 ## supplied synthesized fallback. Lets the user drop in proper SFX without
 ## any code change.
 func _file_or(name: String, fallback: AudioStream) -> AudioStream:
-	for ext: String in [".ogg", ".wav"]:
-		var path := "res://assets/sfx/" + name + ext
-		if ResourceLoader.exists(path):
-			return load(path)
+	for dir: String in ["res://assets/", "res://assets/sfx/"]:
+		for ext: String in [".ogg", ".wav"]:
+			var path := dir + name + ext
+			if ResourceLoader.exists(path):
+				return load(path)
 	return fallback
 
 
