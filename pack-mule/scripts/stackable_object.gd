@@ -423,11 +423,14 @@ func _on_body_entered(body: Node) -> void:
 	# hitting the tower / another object gives the woody "thunk".
 	if _impact_cooldown <= 0.0 and _speed_last_tick >= IMPACT_MIN_SPEED:
 		_impact_cooldown = IMPACT_COOLDOWN
-		var pitch := clampf(remap(mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6)
-		var vol := clampf(remap(_speed_last_tick, 1.6, 10.0, -10.0, -2.0), -12.0, -2.0)
-		var snd := "rock" if body.is_in_group("mountain") else impact_sound()
-		# Positional, so it's quiet when the player is flying far away.
-		Sfx.play_at(snd, global_position, pitch * randf_range(0.95, 1.05), vol)
+		var pitch := clampf(remap(mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6) * randf_range(0.95, 1.05)
+		# Loudness scales with both impact speed and mass — heavy hits boom.
+		var vol := clampf(remap(_speed_last_tick, 1.6, 10.0, -11.0, -3.0), -13.0, -3.0) \
+				+ clampf(remap(mass, 5.0, 400.0, -4.0, 4.0), -4.0, 4.0)
+		# The object's own material always plays; on bare rock, add a crunch.
+		Sfx.play_at(impact_sound(), global_position, pitch, vol)
+		if body.is_in_group("mountain"):
+			Sfx.play_at("rock", global_position, pitch, vol - 6.0)
 	if _super_glue and state == State.FALLING:
 		_settle_now()
 		return

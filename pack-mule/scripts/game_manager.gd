@@ -129,6 +129,8 @@ func _to_main_menu() -> void:
 ## or directly with the photo hotkey mid-run.
 func _enter_photo_mode(_from_pause: bool) -> void:
 	get_tree().paused = true
+	if _ghost != null:
+		_ghost.visible = false  # no blueprint in the photo
 	_camera_rig.process_mode = Node.PROCESS_MODE_ALWAYS
 	_camera_rig.set_process(true)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -345,10 +347,12 @@ func _on_object_settled(obj: StackableObject) -> void:
 		return
 	_settled.append(obj)
 	_score += SCORE_PER_OBJECT
-	# Landing juice: a squash pop, a mass-pitched material sound, dust, kick.
+	# Landing juice: a squash pop, a mass-pitched/-scaled material sound,
+	# dust, and a kick. Heavier objects land lower and louder.
 	obj.pop()
 	Sfx.play_at(obj.impact_sound(), obj.global_position,
-			clampf(remap(obj.mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6))
+			clampf(remap(obj.mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6),
+			clampf(remap(obj.mass, 5.0, 400.0, -6.0, 4.0), -6.0, 4.0))
 	_spawn_dust(obj.global_position - Vector3(0.0, obj.half_extents.y, 0.0), 10, 1.0)
 	_camera_rig.shake(clampf(obj.mass / 500.0, 0.04, 0.16))
 	if obj == _settling:

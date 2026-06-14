@@ -697,8 +697,12 @@ func _end_photo_mode() -> void:
 	if _photo_hint != null:
 		_photo_hint.visible = false
 	photo_exit_requested.emit(_photo_from_pause)
-	if _photo_from_pause and _pause != null:
-		_pause.visible = true
+	if _photo_from_pause:
+		if _pause != null:
+			_pause.visible = true
+	else:
+		# Back into play — bring the in-game readouts back.
+		set_in_game_hud_visible(true)
 
 
 func _snap_photo() -> void:

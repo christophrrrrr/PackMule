@@ -36,8 +36,14 @@ func _process(_delta: float) -> bool:
 			gm._start_game()
 		if _frames == 12:
 			(root.get_node("Main/HUD") as GameHud).start_photo_mode(false)
-		if _frames == 40:
+		if _frames == 30:
 			(root.get_node("Main/HUD") as GameHud)._snap_photo()
+		if _frames == 44:
+			(root.get_node("Main/HUD") as GameHud)._end_photo_mode()
+		if _frames == 52:
+			var h := root.get_node("Main/HUD") as GameHud
+			print("[photomode] after exit: paused=%s hud_visible=%s" % [
+					paused, h._stats_box.visible])
 	if _frames == 8 and "odds" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_odds()
 	if _frames == 8 and "settings" in OS.get_cmdline_user_args():
