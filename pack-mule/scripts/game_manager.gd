@@ -13,8 +13,6 @@ const STRIKES_TO_LOSE := 3
 const COLLAPSE_COUNT := 3        # this many falls inside the window = collapse
 const COLLAPSE_WINDOW := 2.0     # seconds
 const SCORE_PER_OBJECT := 10
-const MULT_PER_METER := 0.3       # height multiplier growth: x1 at base, ~x4 at 10 m
-const BUST_KEEP := 0.25           # fraction of the pot kept if the tower collapses
 const AIM_RANGE := 200.0
 const YAW_SPEED := 2.6           # rad/s while holding Q/E
 const DONKEY_LENGTH := 3.0       # normalized donkey body length in meters
@@ -49,7 +47,10 @@ enum Phase { MENU, AIMING, SETTLING, GAME_OVER }
 @onready var _kill_zone: Area3D = $KillZone
 
 var _phase := Phase.MENU
-var _pot := 0                    # the running, multiplier-boosted score you can bank
+var _banked := 0                 # money already cashed out (safe; this is your score)
+var _pending := 0                # earned-but-not-cashed money (lost on collapse)
+var _streak := 0                 # objects placed since the last cash out
+var _multiplier := 1.0           # current multiplier (climbs per piece, resets on cash)
 var _strikes := 0
 var _ghost: GhostPreview
 var _settling: StackableObject
@@ -110,6 +111,10 @@ func _start_game() -> void:
 	_record = GameSettings.get_record()
 	_event_milestone = 0
 	_beat_record = false
+	_banked = 0
+	_pending = 0
+	_streak = 0
+	_multiplier = 1.0
 	_hud.hide_main_menu()
 	_hud.set_in_game_hud_visible(true)
 	_hud.set_in_run(true)
@@ -355,21 +360,33 @@ func _on_object_settled(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
 		return
 	_settled.append(obj)
-	# Banking: each object is worth more the higher the tower already is,
-	# so climbing fattens the pot you're gambling.
 	_recompute_tower_top()
-	_pot += int(round(SCORE_PER_OBJECT * _height_multiplier()))
-	# Settling is now silent and still — the satisfying feedback already
-	# fired at placement, so coming to rest stays clean.
+	# Each piece earns at the CURRENT multiplier into the pending pot, then
+	# the multiplier climbs for the next piece. Cashing out banks the pot and
+	# resets the multiplier; a collapse loses the pending pot.
+	_pending += int(round(SCORE_PER_OBJECT * _multiplier))
+	_streak += 1
+	_multiplier = _streak_multiplier(_streak)
+	# A rising coin blip — the climb should feel rewarding.
+	Sfx.play_at("coin", obj.global_position,
+			clampf(1.0 + _streak * 0.05, 1.0, 2.2), -9.0)
+	_refresh_hud()
+	# Settling itself stays clean — the satisfying feedback fired at placement.
 	if obj == _settling:
 		_settling = null
 	if _phase == Phase.SETTLING:
 		_spawn_next()
 
 
-## The current height multiplier — grows with how tall the tower stands.
-func _height_multiplier() -> float:
-	return 1.0 + maxf(0.0, _tower_top - _base_top) * MULT_PER_METER
+## The multiplier after `streak` pieces since the last cash out:
+## 1, 1.5, 2, 3, 4, 6, 8, 11, 14, 18, ... (gentle acceleration — increments
+## come in pairs that grow: +0.5,+0.5, +1,+1, +2,+2, +3,+3, ...).
+func _streak_multiplier(streak: int) -> float:
+	var m := 1.0
+	for step in range(1, streak + 1):
+		var pair := (step + 1) / 2  # steps 1-2 -> 1, 3-4 -> 2, 5-6 -> 3, ...
+		m += 0.5 if pair == 1 else float(pair - 1)
+	return m
 
 
 ## Every settle (including pieces that re-settle after glue broke): glue
@@ -597,16 +614,28 @@ func _make_visual(path: String, target_size: float) -> Node3D:
 
 
 func _refresh_hud() -> void:
-	_hud.set_bank(_pot, _height_multiplier())
+	_hud.set_money(_banked)
+	_hud.set_pending(_pending, _multiplier)
 	_hud.set_height(_tower_top - _base_top)
 	_hud.set_strikes(_strikes, STRIKES_TO_LOSE)
 
 
-## Cash out: end the run as a win and bank the full pot. Always available
-## mid-run (key or pause-menu button).
+## Cash out: bank the pending pot into your safe money and reset the
+## multiplier to ×1 — the run keeps going. Always available mid-run.
 func _cash_out() -> void:
-	if _phase == Phase.AIMING or _phase == Phase.SETTLING:
-		_game_over("CASHED OUT!", true)
+	if _phase != Phase.AIMING and _phase != Phase.SETTLING:
+		return
+	if _pending <= 0:
+		return
+	var amount := _pending
+	_banked += amount
+	_pending = 0
+	_streak = 0
+	_multiplier = 1.0
+	Sfx.play("register")
+	Sfx.play("coin")
+	_hud.bank_flourish(_banked, amount)
+	_hud.set_pending(_pending, _multiplier)
 
 
 func _refresh_modifier_label() -> void:
@@ -625,18 +654,18 @@ func _refresh_incoming(entry: Dictionary) -> void:
 	_hud.set_incoming("INCOMING: %s" % label)
 
 
-## `cashed` true = the player banked the pot (a win); false = the tower
-## busted, so only BUST_KEEP of the pot survives.
-func _game_over(reason: String, cashed := false) -> void:
+## The run ends only when the tower collapses. You keep your banked money;
+## the pending (un-cashed) pot is lost — that's the risk of not cashing out.
+func _game_over(reason: String) -> void:
 	_phase = Phase.GAME_OVER
 	if _ghost != null:
 		_ghost.queue_free()
 		_ghost = null
 	_hud.set_in_run(false)        # no pausing on the game-over screen
-	get_tree().paused = false     # in case we cashed out from the pause menu
+	get_tree().paused = false
 	Sfx.stop_wind()
-	Sfx.play("ding" if cashed else "sting")
-	var banked := _pot if cashed else int(round(_pot * BUST_KEEP))
+	Sfx.play("sting")
+	var lost := _pending
 	# Freeze the whole scene so the photo is crisp, then frame and shoot the
 	# tower before any UI is shown.
 	Engine.time_scale = 0.0
@@ -647,14 +676,13 @@ func _game_over(reason: String, cashed := false) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # so the buttons are clickable
 	var is_record := _max_height > _record
 	GameSettings.set_record(maxf(_record, _max_height))
-	GameSettings.set_score_record(maxi(GameSettings.get_score_record(), banked))
+	GameSettings.set_score_record(maxi(GameSettings.get_score_record(), _banked))
 	var stats := {
 		"height": _max_height,
 		"objects": _placed_count,
 		"weight": _total_weight,
-		"score": banked,
-		"pot": _pot,
-		"cashed": cashed,
+		"score": _banked,
+		"lost": lost,
 		"record": maxf(_record, _max_height),
 		"score_record": GameSettings.get_score_record(),
 		"new_record": is_record,

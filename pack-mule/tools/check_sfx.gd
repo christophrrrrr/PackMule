@@ -7,7 +7,7 @@ extends SceneTree
 func _init() -> void:
 	var names := ["wood", "metal", "soft", "glass", "piano", "critter",
 			"cow", "bear", "trex", "alien", "rock", "crash", "thunder",
-			"tick", "ding", "sting", "wind"]
+			"tick", "ding", "sting", "wind", "coin", "register"]
 	for n in names:
 		var found := ""
 		for dir in ["res://assets/", "res://assets/sfx/"]:

@@ -34,8 +34,9 @@ const GALLERY_MAX := 20
 @onready var _game_over: CenterContainer = $GameOverPanel
 
 # In-game readouts (built in code).
-var _bank: Label
-var _mult: Label
+var _money: Label                 # banked, safe money — the big satisfying counter
+var _money_shown := 0.0           # value currently displayed (for count-up tween)
+var _money_tween: Tween
 var _height: Label
 var _strikes: Label
 var _modifier: Label
@@ -154,25 +155,26 @@ func _build_in_game_hud() -> void:
 	var sbox := VBoxContainer.new()
 	sbox.add_theme_constant_override("separation", 2)
 	_stats_box.add_child(sbox)
-	_bank = _make_label("BANK: 0", 28, SUNNY)
-	_mult = _make_label("×1.0", 18, LEAF)
+	_money = _make_label("$0", 40, SUNNY)
+	_money.add_theme_color_override("font_outline_color", INK)
+	_money.add_theme_constant_override("outline_size", 6)
 	_height = _make_label("HEIGHT: 0.0 m", 18, SKY)
 	_strikes = _make_label("FALLEN: 0 / 3", 18, TANGERINE)
 	_modifier = _make_label("MODIFIER: -   (TAB: SPIN)", 15, CREAM)
-	for n in [_bank, _mult, _height, _strikes, _modifier]:
+	for n in [_money, _height, _strikes, _modifier]:
 		sbox.add_child(n)
 	add_child(_stats_box)
 
-	# A standout prompt so the player always sees the cash-out gamble.
+	# The cash-out gamble: pending pot + live multiplier, always in view.
 	_cashout_box = PanelContainer.new()
-	_cashout_box.add_theme_stylebox_override("panel", _rounded(LEAF, 16, LEAF.darkened(0.3), 18, 8))
+	_cashout_box.add_theme_stylebox_override("panel", _rounded(LEAF, 18, LEAF.darkened(0.3), 20, 12))
 	_cashout_box.anchor_left = 1.0
 	_cashout_box.anchor_right = 1.0
 	_cashout_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_cashout_box.offset_left = -16
 	_cashout_box.offset_top = 14
 	_cashout_box.offset_right = -16
-	_cashout = _make_label("CASH OUT", 20, INK)
+	_cashout = _make_label("", 22, INK)
 	_cashout.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_cashout_box.add_child(_cashout)
 	add_child(_cashout_box)
@@ -210,10 +212,57 @@ func wheel_busy() -> bool:
 	return _wheel.is_busy()
 
 
-func set_bank(pot: int, mult: float) -> void:
-	_bank.text = "BANK: %d" % pot
-	_mult.text = "×%.1f" % mult
-	_cashout.text = "CASH OUT  %d\n[%s]" % [pot, GameSettings.binding_text("pm_cashout")]
+## The big banked-money counter. Sets it instantly (used on refresh / reset).
+func set_money(banked: int) -> void:
+	_money_shown = float(banked)
+	_money.text = "$%s" % _money_str(banked)
+
+
+## The cash-out pill: what you'd bank now and the live multiplier.
+func set_pending(pending: int, mult: float) -> void:
+	_cashout.text = "CASH OUT  $%s\n×%s   [%s]" % [
+			_money_str(pending), _mult_str(mult), GameSettings.binding_text("pm_cashout")]
+	_punch(_cashout_box, 1.12)
+
+
+## Cash out! Count the banked money up to its new total and punch it.
+func bank_flourish(new_banked: int, _amount: int) -> void:
+	if _money_tween != null and _money_tween.is_valid():
+		_money_tween.kill()
+	_money_tween = create_tween()
+	_money_tween.tween_method(_set_money_display, _money_shown, float(new_banked), 0.55) \
+			.set_trans(Tween.TRANS_QUAD)
+	_punch(_money, 1.4)
+
+
+func _set_money_display(v: float) -> void:
+	_money_shown = v
+	_money.text = "$%s" % _money_str(int(v))
+
+
+## A quick scale-punch for juicy feedback.
+func _punch(node: Control, amount := 1.25) -> void:
+	node.pivot_offset = node.size / 2.0
+	node.scale = Vector2(amount, amount)
+	create_tween().tween_property(node, "scale", Vector2.ONE, 0.25) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+## 1240 -> "1,240".
+func _money_str(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	var c := 0
+	for i in range(s.length() - 1, -1, -1):
+		out = s[i] + out
+		c += 1
+		if c % 3 == 0 and i > 0:
+			out = "," + out
+	return ("-" if n < 0 else "") + out
+
+
+func _mult_str(mult: float) -> String:
+	return "%d" % int(mult) if mult == floor(mult) else "%.1f" % mult
 
 
 func set_height(meters: float) -> void:
@@ -287,7 +336,7 @@ func _build_main_menu() -> void:
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(tagline)
 
-	var best := _make_label("BEST  %.1f M   ·   %d PTS" % [GameSettings.get_record(), GameSettings.get_score_record()], 22, SUNNY)
+	var best := _make_label("BEST  %.1f M   ·   $%s" % [GameSettings.get_record(), _money_str(GameSettings.get_score_record())], 22, SUNNY)
 	best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(best)
 
@@ -680,7 +729,9 @@ func _build_pause() -> void:
 	resume.pressed.connect(_resume)
 	box.add_child(resume)
 	var cash := _make_button("CASH OUT", SUNNY)
-	cash.pressed.connect(func() -> void: cash_out_requested.emit())
+	cash.pressed.connect(func() -> void:
+		cash_out_requested.emit()
+		_resume())
 	box.add_child(cash)
 	var photo := _make_button("PHOTO MODE", SKY)
 	photo.pressed.connect(start_photo_mode)
@@ -798,19 +849,18 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 		_build_game_over_ui()
 		_go_built = true
 	_build_postcard(photo, stats)
-	var cashed: bool = stats.get("cashed", false)
-	if cashed:
-		_go_title.text = "CASHED OUT!"
-	elif stats.get("new_record", false):
+	if stats.get("new_record", false):
 		_go_title.text = "NEW RECORD!"
 	else:
 		_go_title.text = reason
-	if cashed:
-		_go_subtitle.text = "BANKED  %d PTS      BEST  %d" % [int(stats["score"]), int(stats.get("score_record", 0))]
+	var banked := int(stats["score"])
+	var lost := int(stats.get("lost", 0))
+	var best := int(stats.get("score_record", 0))
+	if lost > 0:
+		_go_subtitle.text = "BANKED  $%s   ·   LOST $%s UNCASHED   ·   BEST $%s" % [
+				_money_str(banked), _money_str(lost), _money_str(best)]
 	else:
-		# Busted: show what the pot was and what little survived.
-		_go_subtitle.text = "BUSTED — KEPT %d OF %d PTS      BEST  %d" % [
-				int(stats["score"]), int(stats.get("pot", 0)), int(stats.get("score_record", 0))]
+		_go_subtitle.text = "BANKED  $%s      BEST  $%s" % [_money_str(banked), _money_str(best)]
 	_chip_values["HEIGHT"].text = "%.1f m" % float(stats["height"])
 	_chip_values["OBJECTS"].text = "%d" % int(stats["objects"])
 	_chip_values["WEIGHT"].text = "%d kg" % int(round(float(stats["weight"])))
@@ -953,8 +1003,9 @@ func _build_postcard(image: Image, stats: Dictionary) -> void:
 
 	if image != null:
 		_pc_photo.texture = ImageTexture.create_from_image(image)
-	_pc_caption.text = "%.1f M  ·  %d OBJECTS  ·  %d KG" % [
-			float(stats["height"]), int(stats["objects"]), int(round(float(stats["weight"])))]
+	_pc_caption.text = "$%s  ·  %.1f M  ·  %d OBJECTS  ·  %d KG" % [
+			_money_str(int(stats.get("score", 0))), float(stats["height"]),
+			int(stats["objects"]), int(round(float(stats["weight"])))]
 
 
 func _on_save_pressed() -> void:

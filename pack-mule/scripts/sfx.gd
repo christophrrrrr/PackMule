@@ -48,6 +48,8 @@ func _ready() -> void:
 	_streams["tick"] = _file_or("tick", _tick())
 	_streams["ding"] = _file_or("ding", _ding())
 	_streams["sting"] = _file_or("sting", _sting())
+	_streams["coin"] = _file_or("coin", _ding())          # money blip / coins
+	_streams["register"] = _file_or("register", _ding())  # cash-register cha-ching
 	for i in 10:
 		var v := AudioStreamPlayer.new()
 		v.bus = "SFX"  # bus created by GameSettings (added before Sfx)
