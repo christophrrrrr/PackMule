@@ -30,26 +30,20 @@ func _process(_delta: float) -> bool:
 		var gm := root.get_node("Main") as GameManager
 		gm._start_game()
 		gm._event_fireworks()
-	if "photobar" in OS.get_cmdline_user_args():
-		var gm := root.get_node("Main") as GameManager
-		if _frames == 6:
-			gm._start_game()
-		if _frames == 12:
-			(root.get_node("Main/HUD") as GameHud).start_photo_mode(true)
 	if "photomode" in OS.get_cmdline_user_args():
 		var gm := root.get_node("Main") as GameManager
 		if _frames == 6:
 			gm._start_game()
 		if _frames == 12:
-			(root.get_node("Main/HUD") as GameHud).start_photo_mode(false)
+			(root.get_node("Main/HUD") as GameHud).start_photo_mode()
 		if _frames == 30:
 			(root.get_node("Main/HUD") as GameHud)._snap_photo()
 		if _frames == 44:
-			(root.get_node("Main/HUD") as GameHud)._end_photo_mode()
+			(root.get_node("Main/HUD") as GameHud)._photo_to_pause()
 		if _frames == 52:
 			var h := root.get_node("Main/HUD") as GameHud
-			print("[photomode] after exit: paused=%s hud_visible=%s" % [
-					paused, h._stats_box.visible])
+			print("[photomode] esc->pause: paused=%s pause_visible=%s photo=%s" % [
+					paused, h._pause != null and h._pause.visible, h._photo])
 	if _frames == 8 and "odds" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_odds()
 	if _frames == 8 and "settings" in OS.get_cmdline_user_args():

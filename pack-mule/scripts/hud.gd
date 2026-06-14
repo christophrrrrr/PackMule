@@ -8,8 +8,8 @@ extends CanvasLayer
 signal restart_requested
 signal start_requested
 signal to_main_menu_requested
-signal photo_enter_requested(from_pause: bool)
-signal photo_exit_requested(from_pause: bool)
+signal photo_enter_requested
+signal photo_to_pause_requested
 signal wheel_landed(modifier: Dictionary)
 
 # Cartoon palette.
@@ -66,8 +66,7 @@ var _odds_pct := {}               # entry name -> percent Label
 var _flash: ColorRect
 var _record_banner: Label
 var _photo := false
-var _photo_from_pause := false
-var _photo_bar: PanelContainer
+var _photo_hint: Label
 
 # Game-over panel.
 var _go_built := false
@@ -625,6 +624,9 @@ func _toggle_pause() -> void:
 	if _pause == null:
 		_build_pause()
 	_pause.visible = _paused
+	# Hide the readouts behind the pause panel; restore them on resume
+	# (also covers returning from photo mode, which hid them).
+	set_in_game_hud_visible(not _paused)
 
 
 func _resume() -> void:
@@ -657,7 +659,7 @@ func _build_pause() -> void:
 	resume.pressed.connect(_resume)
 	box.add_child(resume)
 	var photo := _make_button("PHOTO MODE", SUNNY)
-	photo.pressed.connect(start_photo_mode.bind(true))
+	photo.pressed.connect(start_photo_mode)
 	box.add_child(photo)
 	var settings := _make_button("SETTINGS", TANGERINE)
 	settings.pressed.connect(func() -> void: _open_settings(_pause))
@@ -673,63 +675,43 @@ func _build_pause() -> void:
 ## Photo mode: frozen scene, free camera, hidden UI, snap a shot.
 ## `from_pause` true = opened via the pause menu (return to it on exit);
 ## false = opened with the hotkey mid-run (return to play on exit).
-func start_photo_mode(from_pause: bool) -> void:
+## Free-look photo mode: cursor captured, fly with WASD + mouse, [P] snaps,
+## [Esc] opens the pause menu (which has a button back to builder mode).
+func start_photo_mode() -> void:
 	if _photo:
 		return
-	_photo_from_pause = from_pause
 	if _pause != null:
 		_pause.visible = false
 	set_in_game_hud_visible(false)
 	_photo = true
-	if _photo_bar == null:
-		_build_photo_bar()
-	_photo_bar.visible = true
-	photo_enter_requested.emit(_photo_from_pause)
+	if _photo_hint == null:
+		_photo_hint = _make_label("PHOTO MODE   ·   WASD + MOUSE TO FLY   ·   [P] SNAP   ·   [ESC] MENU", 16, CREAM)
+		_photo_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+		_photo_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_photo_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		_photo_hint.offset_top = -40
+		add_child(_photo_hint)
+	_photo_hint.visible = true
+	photo_enter_requested.emit()
 
 
-## A small top toolbar shown in photo mode: a hint plus Snap and Builder
-## Mode (exit) buttons. The cursor is visible here so these are clickable.
-func _build_photo_bar() -> void:
-	_photo_bar = PanelContainer.new()
-	_photo_bar.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 16, SUNNY, 16, 8))
-	_photo_bar.anchor_left = 0.5
-	_photo_bar.anchor_right = 0.5
-	_photo_bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_photo_bar.offset_top = 12
-	add_child(_photo_bar)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_photo_bar.add_child(row)
-	var hint := _make_label("PHOTO MODE  ·  WASD FLY  ·  HOLD RIGHT-MOUSE TO LOOK", 16, CREAM)
-	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(hint)
-	var snap := _make_button("SNAP PHOTO", SKY)
-	snap.add_theme_font_size_override("font_size", 18)
-	snap.pressed.connect(_snap_photo)
-	row.add_child(snap)
-	var exit := _make_button("BUILDER MODE", LEAF)
-	exit.add_theme_font_size_override("font_size", 18)
-	exit.pressed.connect(_end_photo_mode)
-	row.add_child(exit)
-
-
-func _end_photo_mode() -> void:
+## Esc in photo mode -> the pause menu (cursor freed, camera frozen).
+func _photo_to_pause() -> void:
 	_photo = false
-	if _photo_bar != null:
-		_photo_bar.visible = false
-	photo_exit_requested.emit(_photo_from_pause)
-	if _photo_from_pause:
-		if _pause != null:
-			_pause.visible = true
-	else:
-		# Back into play — bring the in-game readouts back.
-		set_in_game_hud_visible(true)
+	if _photo_hint != null:
+		_photo_hint.visible = false
+	_paused = true
+	get_tree().paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if _pause == null:
+		_build_pause()
+	_pause.visible = true
+	photo_to_pause_requested.emit()
 
 
 func _snap_photo() -> void:
-	if _photo_bar != null:
-		_photo_bar.visible = false
+	if _photo_hint != null:
+		_photo_hint.visible = false
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	Sfx.play("tick", 1.3)
@@ -741,12 +723,12 @@ func _snap_photo() -> void:
 	if pics.is_empty():
 		pics = OS.get_user_data_dir()
 	img.save_png(pics.path_join("PackMule_%d.png" % int(Time.get_unix_time_from_system())))
-	if _photo and _photo_bar != null:
-		_photo_bar.visible = true
+	if _photo and _photo_hint != null:
+		_photo_hint.visible = true
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Photo mode: P snaps, Esc returns to pause.
+	# Photo mode: P snaps, Esc opens the pause menu.
 	if _photo and event is InputEventKey and event.pressed and not event.echo:
 		var code := (event as InputEventKey).keycode
 		if code == KEY_P:
@@ -755,7 +737,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if code == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
-			_end_photo_mode()
+			_photo_to_pause()
 			return
 	# Rebinding a key: capture the next key/button press.
 	if not _listening.is_empty():

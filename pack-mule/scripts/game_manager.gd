@@ -84,7 +84,7 @@ func _ready() -> void:
 	_hud.start_requested.connect(_start_game)
 	_hud.to_main_menu_requested.connect(_to_main_menu)
 	_hud.photo_enter_requested.connect(_enter_photo_mode)
-	_hud.photo_exit_requested.connect(_exit_photo_mode)
+	_hud.photo_to_pause_requested.connect(_photo_to_pause)
 	_hud.wheel_landed.connect(_on_wheel_landed)
 	if _autostart:
 		_autostart = false
@@ -127,30 +127,20 @@ func _to_main_menu() -> void:
 ## Photo mode: the scene freezes (tree paused) but the camera can fly so the
 ## player can compose a shot of their tower. Reachable from the pause menu
 ## or directly with the photo hotkey mid-run.
-func _enter_photo_mode(_from_pause: bool) -> void:
+## Photo mode: the scene freezes (tree paused) but the camera flies with
+## the normal captured free-look so the player can compose a shot. Reached
+## from the pause menu or the photo hotkey. Exit is via Esc -> pause menu.
+func _enter_photo_mode() -> void:
 	get_tree().paused = true
 	if _ghost != null:
 		_ghost.visible = false  # no blueprint in the photo
-	_camera_rig.process_mode = Node.PROCESS_MODE_ALWAYS
-	_camera_rig.set_process(true)
-	_camera_rig.set_freelook(true)
-	# Cursor stays visible so the on-screen photo buttons are clickable;
-	# the player holds right-mouse to look around.
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_camera_rig.process_mode = Node.PROCESS_MODE_ALWAYS  # fly while paused
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-func _exit_photo_mode(from_pause: bool) -> void:
+## Photo mode -> pause menu (camera freezes again; HUD shows the menu).
+func _photo_to_pause() -> void:
 	_camera_rig.process_mode = Node.PROCESS_MODE_PAUSABLE
-	_camera_rig.set_freelook(false)
-	if from_pause:
-		# Back to the (still paused) pause menu.
-		_camera_rig.set_process(false)
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	else:
-		# Straight back into play.
-		get_tree().paused = false
-		_camera_rig.set_process(true)
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func _on_restart() -> void:
@@ -220,7 +210,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pm_photo"):
 		# Jump straight into photo mode mid-run (also in the pause menu).
 		if _phase == Phase.AIMING or _phase == Phase.SETTLING:
-			_hud.start_photo_mode(false)
+			_hud.start_photo_mode()
 		return
 	if event.is_action_pressed("pm_spin"):
 		# One spin per object: the wheel unlocks again once the modified
@@ -726,7 +716,9 @@ func _tower_world_aabb() -> AABB:
 	if _settling != null and _settling not in members:
 		members.append(_settling)
 	for obj: StackableObject in members:
-		if not is_instance_valid(obj) or obj.state == StackableObject.State.FALLEN:
+		# Only frame pieces actually at rest — a piece still tumbling far
+		# below would otherwise drag the framing off the tower entirely.
+		if not is_instance_valid(obj) or obj.state != StackableObject.State.SETTLED:
 			continue
 		var t := obj.global_transform
 		var he := obj.half_extents

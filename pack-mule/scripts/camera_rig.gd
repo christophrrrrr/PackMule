@@ -20,9 +20,6 @@ var _speed := 8.0
 var _yaw := 0.0
 var _pitch := 0.0
 var _shake := 0.0
-## Photo mode: cursor stays visible (so on-screen buttons work) and the
-## view only rotates while the right mouse button is held.
-var _freelook := false
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -37,12 +34,8 @@ func _ready() -> void:
 	# cursor); it captures the mouse when the run starts.
 
 
-func set_freelook(enabled: bool) -> void:
-	_freelook = enabled
-
-
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion and _can_look():
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_yaw -= event.relative.x * LOOK_SENSITIVITY
 		_pitch = clampf(_pitch - event.relative.y * LOOK_SENSITIVITY, -MAX_PITCH, MAX_PITCH)
 		rotation = Vector3(_pitch, _yaw, 0.0)
@@ -78,14 +71,6 @@ func _process(delta: float) -> void:
 		_shake = move_toward(_shake, 0.0, SHAKE_DECAY * _shake * delta + delta)
 	elif _camera.position != Vector3.ZERO:
 		_camera.position = Vector3.ZERO
-
-
-## Looking is allowed when the cursor is captured (normal play) or, in
-## photo mode, while the right mouse button is held.
-func _can_look() -> bool:
-	if _freelook:
-		return Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-	return Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 
 
 ## Kick the camera; bigger amount = bigger jolt. Used for impacts/collapses.

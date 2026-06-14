@@ -29,18 +29,20 @@ func _ready() -> void:
 	_inst = self
 	# No audio device in headless test runs — stay silent but harmless.
 	_enabled = DisplayServer.get_name() != "headless"
-	_streams["thunk"] = _thunk()        # wood
-	_streams["metal"] = _metal()
-	_streams["soft"] = _soft()
-	_streams["glass"] = _glass()
-	_streams["piano"] = _piano()
-	_streams["critter"] = _critter()
-	_streams["rock"] = _rock()
-	_streams["crash"] = _crash()
-	_streams["thunder"] = _thunder()
-	_streams["tick"] = _tick()
-	_streams["ding"] = _ding()
-	_streams["sting"] = _sting()
+	# Each sound prefers a real file in res://assets/sfx/<name>.ogg|wav and
+	# falls back to the synthesized version until you add one.
+	_streams["thunk"] = _file_or("wood", _thunk())
+	_streams["metal"] = _file_or("metal", _metal())
+	_streams["soft"] = _file_or("soft", _soft())
+	_streams["glass"] = _file_or("glass", _glass())
+	_streams["piano"] = _file_or("piano", _piano())
+	_streams["critter"] = _file_or("critter", _critter())
+	_streams["rock"] = _file_or("rock", _rock())
+	_streams["crash"] = _file_or("crash", _crash())
+	_streams["thunder"] = _file_or("thunder", _thunder())
+	_streams["tick"] = _file_or("tick", _tick())
+	_streams["ding"] = _file_or("ding", _ding())
+	_streams["sting"] = _file_or("sting", _sting())
 	for i in 10:
 		var v := AudioStreamPlayer.new()
 		v.bus = "SFX"  # bus created by GameSettings (added before Sfx)
@@ -55,10 +57,21 @@ func _ready() -> void:
 		add_child(v3)
 		_voices3d.append(v3)
 	_wind = AudioStreamPlayer.new()
-	_wind.stream = _wind_stream()
+	_wind.stream = _file_or("wind", _wind_stream())
 	_wind.volume_db = -26.0
 	_wind.bus = "Ambience"
 	add_child(_wind)
+
+
+## Returns a real sound file from res://assets/sfx/ if present, else the
+## supplied synthesized fallback. Lets the user drop in proper SFX without
+## any code change.
+func _file_or(name: String, fallback: AudioStream) -> AudioStream:
+	for ext: String in [".ogg", ".wav"]:
+		var path := "res://assets/sfx/" + name + ext
+		if ResourceLoader.exists(path):
+			return load(path)
+	return fallback
 
 
 ## Non-positional (UI, wheel, stings) — same volume regardless of camera.
