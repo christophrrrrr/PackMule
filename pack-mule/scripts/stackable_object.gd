@@ -60,7 +60,8 @@ var _hull := ConvexPolygonShape3D.new()
 
 ## `modifier` is one of ModifierCatalog.ENTRIES (or {} for none) and can
 ## scale size and mass, override friction, and change glue behavior.
-static func create(entry: Dictionary, modifier: Dictionary = {}) -> StackableObject:
+## `golden` makes the object purely cosmetically gold (a rare 1% treat).
+static func create(entry: Dictionary, modifier: Dictionary = {}, golden := false) -> StackableObject:
 	var obj := StackableObject.new()
 	obj.display_name = entry["name"] if modifier.is_empty() \
 			else "%s %s" % [modifier["name"], entry["name"]]
@@ -80,6 +81,8 @@ static func create(entry: Dictionary, modifier: Dictionary = {}) -> StackableObj
 	obj.max_contacts_reported = 8
 	obj.body_entered.connect(obj._on_body_entered)
 	obj._build_model(entry["path"], entry["size"] * modifier.get("size_mul", 1.0))
+	if golden:
+		obj._make_golden()
 	obj._enter_held()
 	return obj
 
@@ -445,6 +448,22 @@ func _build_model(path: String, target_size: float) -> void:
 		var col := CollisionShape3D.new()
 		col.shape = shape
 		add_child(col)
+
+
+## Overrides every mesh with a shiny gold material (cosmetic only).
+func _make_golden() -> void:
+	var gold := StandardMaterial3D.new()
+	gold.albedo_color = Color(1.0, 0.82, 0.16)
+	gold.metallic = 1.0
+	gold.roughness = 0.28
+	_paint(self, gold)
+
+
+func _paint(node: Node, mat: Material) -> void:
+	if node is MeshInstance3D:
+		(node as MeshInstance3D).material_override = mat
+	for child in node.get_children():
+		_paint(child, mat)
 
 
 func _enter_held() -> void:

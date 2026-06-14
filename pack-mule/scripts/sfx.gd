@@ -25,6 +25,7 @@ func _ready() -> void:
 	_streams["thunk"] = _thunk()
 	_streams["rock"] = _rock()
 	_streams["crash"] = _crash()
+	_streams["thunder"] = _thunder()
 	_streams["tick"] = _tick()
 	_streams["ding"] = _ding()
 	_streams["sting"] = _sting()
@@ -175,15 +176,43 @@ func _sting() -> AudioStreamWAV:
 	return _wav(s)
 
 
-## Gentle looping wind — low-passed noise, very quiet.
+## A continuous, steady wind: low-passed noise at a near-constant level,
+## with the buffer's tail cross-faded into its head so the loop is
+## seamless (no gap or click between repeats).
 func _wind_stream() -> AudioStreamWAV:
-	var dur := 3.0
+	var dur := 4.0
+	var n := int(RATE * dur)
+	var fade := int(RATE * 0.4)  # crossfade length
+	var raw := PackedFloat32Array()
+	raw.resize(n + fade)
+	var last := 0.0
+	for i in raw.size():
+		last = last * 0.99 + (randf() * 2.0 - 1.0) * 0.01
+		# Very gentle, never-near-zero swell so it reads as steady wind.
+		var swell := 0.85 + 0.15 * sin(TAU * 1.0 * float(i) / n)
+		raw[i] = last * swell * 7.0
+	# Cross-fade the extra tail samples back over the first `fade` samples.
+	var s := PackedFloat32Array()
+	s.resize(n)
+	for i in n:
+		s[i] = raw[i]
+	for i in fade:
+		var t := float(i) / fade
+		s[i] = lerpf(raw[n + i], raw[i], t)
+	return _wav(s, true)
+
+
+## Lightning thunder — a sharp crack then a long low rumble.
+func _thunder() -> AudioStreamWAV:
+	var dur := 1.3
 	var n := int(RATE * dur)
 	var s := PackedFloat32Array()
 	s.resize(n)
-	var last := 0.0
+	var lp := 0.0
 	for i in n:
-		last = last * 0.985 + (randf() * 2.0 - 1.0) * 0.015
-		var lfo := 0.6 + 0.4 * sin(TAU * 2.0 * float(i) / n)  # whole cycles: seamless-ish
-		s[i] = last * lfo * 6.0
-	return _wav(s, true)
+		var t := float(i) / RATE
+		lp = lp * 0.92 + (randf() * 2.0 - 1.0) * 0.08
+		var crack := (randf() * 2.0 - 1.0) * exp(-t * 45.0) * 0.6
+		var rumble := lp * exp(-t * 2.2) * 1.4
+		s[i] = clampf(crack + rumble, -1.0, 1.0) * 0.8
+	return _wav(s)

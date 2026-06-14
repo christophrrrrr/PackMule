@@ -21,6 +21,13 @@ func _process(_delta: float) -> bool:
 	if _frames == 12 and "pause" in OS.get_cmdline_user_args():
 		(root.get_node("Main") as GameManager)._start_game()
 		(root.get_node("Main/HUD") as GameHud)._toggle_pause()
+	if _frames == 6 and "birds" in OS.get_cmdline_user_args():
+		var gm := root.get_node("Main") as GameManager
+		gm._start_game()
+		gm._event_birds()
+		gm._event_helicopter()
+	if _frames == 8 and "odds" in OS.get_cmdline_user_args():
+		(root.get_node("Main/HUD") as GameHud)._open_odds()
 	if _frames == 8 and "settings" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_settings()
 	if _frames == 8 and "galleryview" in OS.get_cmdline_user_args():

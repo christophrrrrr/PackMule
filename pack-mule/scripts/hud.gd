@@ -8,6 +8,8 @@ extends CanvasLayer
 signal restart_requested
 signal start_requested
 signal to_main_menu_requested
+signal photo_enter_requested
+signal photo_exit_requested
 signal wheel_landed(modifier: Dictionary)
 
 # Cartoon palette.
@@ -58,6 +60,14 @@ var _pause: CenterContainer
 var _in_run := false              # a run is active (pausable)
 var _paused := false
 
+# Odds, overlays, photo mode.
+var _odds: CenterContainer
+var _odds_pct := {}               # entry name -> percent Label
+var _flash: ColorRect
+var _record_banner: Label
+var _photo := false
+var _photo_hint: Label
+
 # Game-over panel.
 var _go_built := false
 var _go_panel: PanelContainer
@@ -81,6 +91,47 @@ func _ready() -> void:
 	_wheel.process_mode = Node.PROCESS_MODE_PAUSABLE
 	_wheel.landed.connect(func(modifier: Dictionary) -> void: wheel_landed.emit(modifier))
 	_build_in_game_hud()
+	_build_overlays()
+
+
+## Full-screen lightning flash + the big record banner (both hidden).
+func _build_overlays() -> void:
+	_flash = ColorRect.new()
+	_flash.color = Color(1, 1, 1, 0)
+	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_flash)
+
+	_record_banner = _make_label("NEW RECORD!", 56, SUNNY)
+	_record_banner.set_anchors_preset(Control.PRESET_CENTER)
+	_record_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_record_banner.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_record_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_record_banner.add_theme_color_override("font_outline_color", INK)
+	_record_banner.add_theme_constant_override("outline_size", 12)
+	_record_banner.modulate.a = 0.0
+	_record_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_record_banner)
+
+
+## Lightning: a quick white flash with a flicker.
+func flash() -> void:
+	var tw := create_tween()
+	tw.tween_property(_flash, "color:a", 0.7, 0.04)
+	tw.tween_property(_flash, "color:a", 0.0, 0.12)
+	tw.tween_property(_flash, "color:a", 0.5, 0.05)
+	tw.tween_property(_flash, "color:a", 0.0, 0.3)
+
+
+## Big "NEW RECORD!" celebration when this run beats the all-time best.
+func celebrate_record() -> void:
+	_record_banner.modulate.a = 1.0
+	_record_banner.scale = Vector2(0.5, 0.5)
+	_record_banner.pivot_offset = _record_banner.size / 2.0
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(_record_banner, "scale", Vector2.ONE, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_record_banner, "modulate:a", 0.0, 2.0).set_delay(1.2)
 
 
 ## A run is active (so Esc should pause). Cleared at game over / main menu.
@@ -215,8 +266,12 @@ func _build_main_menu() -> void:
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(tagline)
 
+	var best := _make_label("BEST: %.1f M" % GameSettings.get_record(), 22, SUNNY)
+	best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(best)
+
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 10)
+	spacer.custom_minimum_size = Vector2(0, 6)
 	box.add_child(spacer)
 
 	var play := _make_button("PLAY", LEAF)
@@ -231,8 +286,11 @@ func _build_main_menu() -> void:
 	var gallery_btn := _make_button("GALLERY", SKY)
 	gallery_btn.pressed.connect(_open_gallery)
 	row.add_child(gallery_btn)
+	var odds_btn := _make_button("ODDS", LEAF)
+	odds_btn.pressed.connect(_open_odds)
+	row.add_child(odds_btn)
 	var settings_btn := _make_button("SETTINGS", TANGERINE)
-	settings_btn.pressed.connect(_open_settings)
+	settings_btn.pressed.connect(_open_settings.bind(null))
 	row.add_child(settings_btn)
 
 	var quit := _make_button("QUIT", Color(0.55, 0.55, 0.62))
@@ -346,6 +404,97 @@ func _autosave_gallery() -> void:
 	files.sort()
 	while files.size() > GALLERY_MAX:
 		dir.remove(files.pop_front())
+
+
+# --- Odds (item rarity) ------------------------------------------------------
+
+func _open_odds() -> void:
+	if _odds == null:
+		_build_odds()
+	_menu.visible = false
+	_odds.visible = true
+	_refresh_odds_pcts()
+
+
+func _build_odds() -> void:
+	_odds = CenterContainer.new()
+	_odds.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_odds.visible = false
+	add_child(_odds)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, LEAF, 28, 20))
+	_odds.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+
+	var title := _make_label("ITEM ODDS", 40, LEAF)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+	box.add_child(_make_label("HIGHER = MORE COMMON", 14, Color(0.8, 0.83, 0.92)))
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(560, 360)
+	box.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 6)
+	scroll.add_child(grid)
+	for e in ObjectCatalog.ENTRIES:
+		var entry_name: String = e["name"]
+		var name_label := _make_label(entry_name, 15, CREAM)
+		name_label.custom_minimum_size = Vector2(150, 0)
+		grid.add_child(name_label)
+		var slider := HSlider.new()
+		slider.min_value = 0.0
+		slider.max_value = 20.0
+		slider.step = 0.5
+		slider.value = GameSettings.get_weight(entry_name)
+		slider.custom_minimum_size = Vector2(280, 0)
+		slider.value_changed.connect(_on_odds_changed.bind(entry_name))
+		grid.add_child(slider)
+		var pct := _make_label("", 15, SUNNY)
+		pct.custom_minimum_size = Vector2(60, 0)
+		_odds_pct[entry_name] = pct
+		grid.add_child(pct)
+
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 16)
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(buttons)
+	var reset := _make_button("DEFAULT", Color(0.55, 0.55, 0.62))
+	reset.pressed.connect(_reset_odds)
+	buttons.add_child(reset)
+	var back := _make_button("BACK", LEAF)
+	back.pressed.connect(_back_to_menu.bind(_odds))
+	buttons.add_child(back)
+
+
+func _on_odds_changed(value: float, entry_name: String) -> void:
+	GameSettings.set_weight(entry_name, value)
+	_refresh_odds_pcts()
+
+
+func _reset_odds() -> void:
+	GameSettings.reset_weights()
+	# Rebuild the screen so sliders snap back to defaults.
+	_odds.queue_free()
+	_odds = null
+	_odds_pct.clear()
+	_open_odds()
+
+
+func _refresh_odds_pcts() -> void:
+	var total := 0.0
+	for e in ObjectCatalog.ENTRIES:
+		total += GameSettings.get_weight(e["name"])
+	for e in ObjectCatalog.ENTRIES:
+		var n: String = e["name"]
+		var w := GameSettings.get_weight(n)
+		(_odds_pct[n] as Label).text = "0%" if total <= 0.0 else "%.1f%%" % (w / total * 100.0)
 
 
 # --- Settings ----------------------------------------------------------------
@@ -506,6 +655,9 @@ func _build_pause() -> void:
 	resume.add_theme_font_size_override("font_size", 28)
 	resume.pressed.connect(_resume)
 	box.add_child(resume)
+	var photo := _make_button("PHOTO MODE", SUNNY)
+	photo.pressed.connect(_start_photo_mode)
+	box.add_child(photo)
 	var settings := _make_button("SETTINGS", TANGERINE)
 	settings.pressed.connect(func() -> void: _open_settings(_pause))
 	box.add_child(settings)
@@ -517,7 +669,61 @@ func _build_pause() -> void:
 	box.add_child(quit)
 
 
+## Photo mode: frozen scene, free camera, hidden UI, snap a shot.
+func _start_photo_mode() -> void:
+	if _pause != null:
+		_pause.visible = false
+	set_in_game_hud_visible(false)
+	_photo = true
+	if _photo_hint == null:
+		_photo_hint = _make_label("PHOTO MODE   ·   FLY: WASD + MOUSE   ·   [P] SNAP   ·   [ESC] BACK", 16, CREAM)
+		_photo_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+		_photo_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_photo_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		_photo_hint.offset_top = -40
+		add_child(_photo_hint)
+	_photo_hint.visible = true
+	photo_enter_requested.emit()
+
+
+func _end_photo_mode() -> void:
+	_photo = false
+	if _photo_hint != null:
+		_photo_hint.visible = false
+	photo_exit_requested.emit()
+	if _pause != null:
+		_pause.visible = true
+
+
+func _snap_photo() -> void:
+	_photo_hint.visible = false
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	Sfx.play("tick", 1.3)
+	# Into the in-game gallery...
+	DirAccess.make_dir_recursive_absolute(GALLERY_DIR)
+	img.save_png(GALLERY_DIR.path_join("photo_%d.png" % int(Time.get_unix_time_from_system())))
+	# ...and exported to Pictures for sharing.
+	var pics := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
+	if pics.is_empty():
+		pics = OS.get_user_data_dir()
+	img.save_png(pics.path_join("PackMule_%d.png" % int(Time.get_unix_time_from_system())))
+	if _photo:
+		_photo_hint.visible = true
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	# Photo mode: P snaps, Esc returns to pause.
+	if _photo and event is InputEventKey and event.pressed and not event.echo:
+		var code := (event as InputEventKey).keycode
+		if code == KEY_P:
+			get_viewport().set_input_as_handled()
+			_snap_photo()
+			return
+		if code == KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
+			_end_photo_mode()
+			return
 	# Rebinding a key: capture the next key/button press.
 	if not _listening.is_empty():
 		if event is InputEventKey and event.pressed and not event.echo:
@@ -553,8 +759,11 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 		_build_game_over_ui()
 		_go_built = true
 	_build_postcard(photo, stats)
-	_go_title.text = reason
-	_go_subtitle.text = "FINAL SCORE  %d" % int(stats["score"])
+	if stats.get("new_record", false):
+		_go_title.text = "NEW RECORD!"
+	else:
+		_go_title.text = reason
+	_go_subtitle.text = "FINAL SCORE  %d      BEST  %.1f M" % [int(stats["score"]), float(stats.get("record", 0.0))]
 	_chip_values["HEIGHT"].text = "%.1f m" % float(stats["height"])
 	_chip_values["OBJECTS"].text = "%d" % int(stats["objects"])
 	_chip_values["WEIGHT"].text = "%d kg" % int(round(float(stats["weight"])))

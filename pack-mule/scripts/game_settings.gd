@@ -166,3 +166,39 @@ static func binding_text(action: String) -> String:
 
 func _save() -> void:
 	_cfg.save(PATH)
+
+
+# --- Spawn weights (rarity) --------------------------------------------------
+
+static func get_weight(entry_name: String) -> float:
+	if _inst == null:
+		return ObjectCatalog.default_weight(entry_name)
+	return _inst._cfg.get_value("rarity", entry_name, ObjectCatalog.default_weight(entry_name))
+
+
+static func set_weight(entry_name: String, value: float) -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("rarity", entry_name, value)
+	_inst._save()
+
+
+static func reset_weights() -> void:
+	if _inst == null:
+		return
+	for e in ObjectCatalog.ENTRIES:
+		_inst._cfg.erase_section_key("rarity", e["name"])
+	_inst._save()
+
+
+# --- Best-height record ------------------------------------------------------
+
+static func get_record() -> float:
+	return _inst._cfg.get_value("stats", "best_height", 0.0) if _inst != null else 0.0
+
+
+static func set_record(meters: float) -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("stats", "best_height", meters)
+	_inst._save()

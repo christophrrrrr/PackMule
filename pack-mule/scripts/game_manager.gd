@@ -60,10 +60,16 @@ var _fall_times: Array[float] = []
 var _last_index := -1
 var _rng := RandomNumberGenerator.new()
 var _pending_mod: Dictionary = {} # wheel result, locked onto the current object
+var _pending_golden := false     # the incoming object is a rare golden one
 var _integrity_timer := 0.0
 var _placed_count := 0           # objects the player has stacked this run
 var _total_weight := 0.0         # combined mass the mule has carried (kg)
 var _started := false            # the run has begun (past the main menu)
+var _event_milestone := 0        # highest 10 m mark that has fired an event
+var _record := 0.0               # best height ever (loaded from settings)
+var _beat_record := false        # this run has already surpassed the record
+
+const GOLDEN_CHANCE := 0.01      # 1% of objects spawn golden (cosmetic)
 
 
 func _ready() -> void:
@@ -77,6 +83,8 @@ func _ready() -> void:
 	_hud.restart_requested.connect(_on_restart)
 	_hud.start_requested.connect(_start_game)
 	_hud.to_main_menu_requested.connect(_to_main_menu)
+	_hud.photo_enter_requested.connect(_enter_photo_mode)
+	_hud.photo_exit_requested.connect(_exit_photo_mode)
 	_hud.wheel_landed.connect(_on_wheel_landed)
 	if _autostart:
 		_autostart = false
@@ -97,6 +105,9 @@ func _start_game() -> void:
 	_started = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_camera_rig.set_process(true)
+	_record = GameSettings.get_record()
+	_event_milestone = 0
+	_beat_record = false
 	_hud.hide_main_menu()
 	_hud.set_in_game_hud_visible(true)
 	_hud.set_in_run(true)
@@ -111,6 +122,20 @@ func _to_main_menu() -> void:
 	Engine.time_scale = 1.0
 	_autostart = false
 	get_tree().reload_current_scene()
+
+
+## Photo mode (from the pause menu): the scene stays frozen (tree paused)
+## but the camera can fly so the player can compose a shot of their tower.
+func _enter_photo_mode() -> void:
+	_camera_rig.process_mode = Node.PROCESS_MODE_ALWAYS
+	_camera_rig.set_process(true)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _exit_photo_mode() -> void:
+	_camera_rig.process_mode = Node.PROCESS_MODE_PAUSABLE
+	_camera_rig.set_process(false)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _on_restart() -> void:
@@ -244,11 +269,10 @@ func _update_ghost() -> void:
 
 
 func _spawn_next() -> void:
-	var idx := _rng.randi_range(0, ObjectCatalog.ENTRIES.size() - 1)
-	while idx == _last_index:
-		idx = _rng.randi_range(0, ObjectCatalog.ENTRIES.size() - 1)
+	var idx := _weighted_pick()
 	_last_index = idx
 	var entry: Dictionary = ObjectCatalog.ENTRIES[idx]
+	_pending_golden = _rng.randf() < GOLDEN_CHANCE
 	_ghost = GhostPreview.create(entry, _pending_mod)
 	_ghost.visible = false  # hidden until the first aim raycast lands
 	add_child(_ghost)
@@ -257,8 +281,29 @@ func _spawn_next() -> void:
 	_refresh_modifier_label()
 
 
+## Picks an object index by spawn weight (rarity), avoiding an immediate
+## repeat. Weights come from the player's Odds settings (or the defaults).
+func _weighted_pick() -> int:
+	var total := 0.0
+	var weights: Array[float] = []
+	for i in ObjectCatalog.ENTRIES.size():
+		var w: float = GameSettings.get_weight(ObjectCatalog.ENTRIES[i]["name"])
+		if i == _last_index:
+			w *= 0.0001  # all but eliminate an immediate repeat
+		weights.append(w)
+		total += w
+	if total <= 0.0:
+		return _rng.randi_range(0, ObjectCatalog.ENTRIES.size() - 1)
+	var roll := _rng.randf() * total
+	for i in weights.size():
+		roll -= weights[i]
+		if roll <= 0.0:
+			return i
+	return weights.size() - 1
+
+
 func _place_object(entry: Dictionary, xform: Transform3D) -> void:
-	var obj := StackableObject.create(entry, _pending_mod)
+	var obj := StackableObject.create(entry, _pending_mod, _pending_golden)
 	obj.transform = xform
 	add_child(obj)
 	obj.drop()
@@ -354,7 +399,103 @@ func _recompute_tower_top() -> void:
 	_tower_top = _base_top
 	for obj in _settled:
 		_tower_top = maxf(_tower_top, obj.top_y())
-	_max_height = maxf(_max_height, _tower_top - _base_top)
+	var h := _tower_top - _base_top
+	_max_height = maxf(_max_height, h)
+	_check_milestones(h)
+
+
+## Fires a background event at each new 10 m mark (a different one each
+## time), and a one-shot RECORD celebration the moment this run passes the
+## best-ever height.
+func _check_milestones(h: float) -> void:
+	var m := int(floor(h / 10.0))
+	if m > _event_milestone:
+		_event_milestone = m
+		_fire_event(m)
+	if not _beat_record and _record >= 1.0 and h > _record:
+		_beat_record = true
+		Sfx.play("ding")
+		_hud.celebrate_record()
+
+
+## Background flavor at altitude — a different one cycles each milestone.
+func _fire_event(milestone: int) -> void:
+	match (milestone - 1) % 4:
+		0: _event_birds()
+		1: _event_lightning()
+		2: _event_helicopter()
+		_: _event_star()
+
+
+func _event_birds() -> void:
+	var sign := 1.0 if _rng.randf() < 0.5 else -1.0
+	var y := _rng.randf_range(7.0, 16.0)
+	var z := _rng.randf_range(-20.0, 25.0)
+	var flock := Node3D.new()
+	add_child(flock)
+	for i in 7:
+		var bird := _make_visual("res://assets/Bird.glb", 1.3)
+		flock.add_child(bird)
+		var off := Vector3(_rng.randf_range(-7.0, 7.0), _rng.randf_range(-2.5, 2.5), _rng.randf_range(-7.0, 7.0))
+		bird.position = Vector3(-70.0 * sign, y, z) + off
+		bird.rotation.y = -PI / 2.0 * sign
+		var tw := create_tween()
+		tw.tween_property(bird, "position",
+				Vector3(70.0 * sign, y + _rng.randf_range(-1.5, 1.5), z) + off, _rng.randf_range(5.0, 7.0))
+	get_tree().create_timer(8.0).timeout.connect(flock.queue_free)
+
+
+func _event_lightning() -> void:
+	_hud.flash()
+	Sfx.play("thunder", _rng.randf_range(0.9, 1.1))
+
+
+func _event_helicopter() -> void:
+	var sign := 1.0 if _rng.randf() < 0.5 else -1.0
+	var y := _rng.randf_range(9.0, 17.0)
+	var z := _rng.randf_range(-15.0, 30.0)
+	var heli := _make_visual("res://assets/Helicopter.glb", 4.5)
+	add_child(heli)
+	heli.position = Vector3(-90.0 * sign, y, z)
+	heli.rotation.y = PI / 2.0 * sign
+	var tw := create_tween()
+	tw.tween_property(heli, "position", Vector3(90.0 * sign, y, z), 7.0)
+	get_tree().create_timer(8.0).timeout.connect(heli.queue_free)
+
+
+func _event_star() -> void:
+	var star := MeshInstance3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.5
+	mesh.height = 1.0
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.95, 0.7)
+	mesh.material = mat
+	star.mesh = mesh
+	add_child(star)
+	var sign := 1.0 if _rng.randf() < 0.5 else -1.0
+	var y := _rng.randf_range(18.0, 26.0)
+	star.position = Vector3(-80.0 * sign, y, _rng.randf_range(-30.0, 30.0))
+	var tw := create_tween()
+	tw.tween_property(star, "position", Vector3(80.0 * sign, y - 12.0, star.position.z), 1.6)
+	get_tree().create_timer(2.0).timeout.connect(star.queue_free)
+
+
+## Loads a .glb as a plain (collision-free) visual, normalized so its
+## longest side is target_size, recentered. Used for background events.
+func _make_visual(path: String, target_size: float) -> Node3D:
+	var holder := Node3D.new()
+	var model: Node3D = (load(path) as PackedScene).instantiate()
+	holder.add_child(model)
+	var pts := PackedVector3Array()
+	StackableObject.collect_hull_points(model, Transform3D.IDENTITY, pts)
+	if not pts.is_empty():
+		var aabb := StackableObject.points_aabb(pts)
+		var longest := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+		model.scale = Vector3.ONE * (target_size / longest)
+		model.position = -aabb.get_center() * model.scale
+	return holder
 
 
 func _total_score() -> int:
@@ -375,10 +516,12 @@ func _refresh_modifier_label() -> void:
 
 
 func _refresh_incoming(entry: Dictionary) -> void:
-	if _pending_mod.is_empty():
-		_hud.set_incoming("Incoming: %s" % entry["name"])
-	else:
-		_hud.set_incoming("Incoming: %s %s" % [_pending_mod["name"], entry["name"]])
+	var label: String = entry["name"]
+	if not _pending_mod.is_empty():
+		label = "%s %s" % [_pending_mod["name"], label]
+	if _pending_golden:
+		label = "GOLDEN %s" % label
+	_hud.set_incoming("INCOMING: %s" % label)
 
 
 func _game_over(reason: String) -> void:
@@ -397,11 +540,15 @@ func _game_over(reason: String) -> void:
 	_hud.set_in_game_hud_visible(false)
 	var photo := await _capture_tower_photo()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # so the buttons are clickable
+	var is_record := _max_height > _record
+	GameSettings.set_record(maxf(_record, _max_height))
 	var stats := {
 		"height": _max_height,
 		"objects": _placed_count,
 		"weight": _total_weight,
 		"score": _total_score(),
+		"record": maxf(_record, _max_height),
+		"new_record": is_record,
 	}
 	_hud.show_game_over(reason, stats, photo)
 
