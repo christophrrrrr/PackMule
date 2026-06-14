@@ -63,6 +63,9 @@ func _ready() -> void:
 		_voices3d.append(v3)
 	_wind = AudioStreamPlayer.new()
 	_wind.stream = _file_or("wind", _wind_stream())
+	# A loaded .ogg won't loop unless told to (the synth WAV already loops).
+	if _wind.stream is AudioStreamOggVorbis:
+		(_wind.stream as AudioStreamOggVorbis).loop = true
 	_wind.volume_db = -26.0
 	_wind.bus = "Ambience"
 	add_child(_wind)

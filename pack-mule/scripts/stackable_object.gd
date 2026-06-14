@@ -313,6 +313,12 @@ func impact_sound() -> String:
 	return "thunk" if sound == "wood" else sound
 
 
+## Briefly mute collision impact sounds — used right after placement so the
+## placement sound isn't doubled by the tiny settling drop.
+func suppress_impact() -> void:
+	_impact_cooldown = 0.35
+
+
 ## A quick squash-and-stretch on the visual mesh (collision is untouched),
 ## for a satisfying "landed" pop. Bigger pieces pop a touch harder.
 func pop() -> void:

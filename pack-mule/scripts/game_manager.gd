@@ -319,6 +319,16 @@ func _place_object(entry: Dictionary, xform: Transform3D) -> void:
 	obj.drop()
 	_placed_count += 1
 	_total_weight += obj.mass
+	# Satisfying placement feedback NOW (not when it settles): a crisp
+	# material sound, a squash pop, a puff of dust, and just a hint of a
+	# kick. The drop's own collision is muted so it doesn't double up.
+	obj.suppress_impact()
+	obj.pop()
+	Sfx.play_at(obj.impact_sound(), obj.global_position,
+			clampf(remap(obj.mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6),
+			clampf(remap(obj.mass, 5.0, 400.0, -6.0, 4.0), -6.0, 4.0))
+	_spawn_dust(obj.global_position - Vector3(0.0, obj.half_extents.y, 0.0), 8, 0.85)
+	_camera_rig.shake(clampf(remap(obj.mass, 5.0, 400.0, 0.012, 0.045), 0.012, 0.045))
 	if not _pending_mod.is_empty():
 		_pending_mod = {}
 		_refresh_modifier_label()
@@ -341,14 +351,8 @@ func _on_object_settled(obj: StackableObject) -> void:
 		return
 	_settled.append(obj)
 	_score += SCORE_PER_OBJECT
-	# Landing juice: a squash pop, a mass-pitched/-scaled material sound,
-	# dust, and a kick. Heavier objects land lower and louder.
-	obj.pop()
-	Sfx.play_at(obj.impact_sound(), obj.global_position,
-			clampf(remap(obj.mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6),
-			clampf(remap(obj.mass, 5.0, 400.0, -6.0, 4.0), -6.0, 4.0))
-	_spawn_dust(obj.global_position - Vector3(0.0, obj.half_extents.y, 0.0), 10, 1.0)
-	_camera_rig.shake(clampf(obj.mass / 500.0, 0.04, 0.16))
+	# Settling is now silent and still — the satisfying feedback already
+	# fired at placement, so coming to rest stays clean.
 	if obj == _settling:
 		_settling = null
 	if _phase == Phase.SETTLING:
