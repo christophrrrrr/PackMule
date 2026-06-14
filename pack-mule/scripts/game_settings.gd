@@ -24,6 +24,7 @@ const BINDS := [
 	["pm_spin", "Spin Wheel", KEY_TAB, -1],
 	["pm_place", "Place Object", -1, MOUSE_BUTTON_LEFT],
 	["pm_photo", "Photo Mode", KEY_C, -1],
+	["pm_cashout", "Cash Out", KEY_ENTER, -1],
 ]
 
 static var _inst: GameSettings
@@ -202,4 +203,15 @@ static func set_record(meters: float) -> void:
 	if _inst == null:
 		return
 	_inst._cfg.set_value("stats", "best_height", meters)
+	_inst._save()
+
+
+static func get_score_record() -> int:
+	return _inst._cfg.get_value("stats", "best_score", 0) if _inst != null else 0
+
+
+static func set_score_record(value: int) -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("stats", "best_score", value)
 	_inst._save()

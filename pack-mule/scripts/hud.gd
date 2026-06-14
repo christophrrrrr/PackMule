@@ -10,6 +10,7 @@ signal start_requested
 signal to_main_menu_requested
 signal photo_enter_requested
 signal photo_to_pause_requested
+signal cash_out_requested
 signal wheel_landed(modifier: Dictionary)
 
 # Cartoon palette.
@@ -33,7 +34,8 @@ const GALLERY_MAX := 20
 @onready var _game_over: CenterContainer = $GameOverPanel
 
 # In-game readouts (built in code).
-var _score: Label
+var _bank: Label
+var _mult: Label
 var _height: Label
 var _strikes: Label
 var _modifier: Label
@@ -41,6 +43,8 @@ var _incoming: Label
 var _stats_box: PanelContainer
 var _incoming_box: PanelContainer
 var _hint_box: PanelContainer
+var _cashout: Label
+var _cashout_box: PanelContainer
 
 # Main menu, gallery, settings.
 var _menu: CenterContainer
@@ -150,13 +154,28 @@ func _build_in_game_hud() -> void:
 	var sbox := VBoxContainer.new()
 	sbox.add_theme_constant_override("separation", 2)
 	_stats_box.add_child(sbox)
-	_score = _make_label("SCORE: 0", 28, SUNNY)
+	_bank = _make_label("BANK: 0", 28, SUNNY)
+	_mult = _make_label("×1.0", 18, LEAF)
 	_height = _make_label("HEIGHT: 0.0 m", 18, SKY)
 	_strikes = _make_label("FALLEN: 0 / 3", 18, TANGERINE)
 	_modifier = _make_label("MODIFIER: -   (TAB: SPIN)", 15, CREAM)
-	for n in [_score, _height, _strikes, _modifier]:
+	for n in [_bank, _mult, _height, _strikes, _modifier]:
 		sbox.add_child(n)
 	add_child(_stats_box)
+
+	# A standout prompt so the player always sees the cash-out gamble.
+	_cashout_box = PanelContainer.new()
+	_cashout_box.add_theme_stylebox_override("panel", _rounded(LEAF, 16, LEAF.darkened(0.3), 18, 8))
+	_cashout_box.anchor_left = 1.0
+	_cashout_box.anchor_right = 1.0
+	_cashout_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_cashout_box.offset_left = -16
+	_cashout_box.offset_top = 14
+	_cashout_box.offset_right = -16
+	_cashout = _make_label("CASH OUT", 20, INK)
+	_cashout.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_cashout_box.add_child(_cashout)
+	add_child(_cashout_box)
 
 	_incoming_box = PanelContainer.new()
 	_incoming_box.add_theme_stylebox_override("panel", _rounded(SUNNY, 16, SUNNY.darkened(0.3), 18, 6))
@@ -191,8 +210,10 @@ func wheel_busy() -> bool:
 	return _wheel.is_busy()
 
 
-func set_score(total: int) -> void:
-	_score.text = "SCORE: %d" % total
+func set_bank(pot: int, mult: float) -> void:
+	_bank.text = "BANK: %d" % pot
+	_mult.text = "×%.1f" % mult
+	_cashout.text = "CASH OUT  %d\n[%s]" % [pot, GameSettings.binding_text("pm_cashout")]
 
 
 func set_height(meters: float) -> void:
@@ -218,7 +239,7 @@ func set_crosshair(shown: bool) -> void:
 
 ## Hides every in-game readout so the tower photo is captured clean.
 func set_in_game_hud_visible(shown: bool) -> void:
-	for node in [_stats_box, _incoming_box, _hint_box, _crosshair]:
+	for node in [_stats_box, _incoming_box, _hint_box, _crosshair, _cashout_box]:
 		node.visible = shown
 
 
@@ -266,7 +287,7 @@ func _build_main_menu() -> void:
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(tagline)
 
-	var best := _make_label("BEST: %.1f M" % GameSettings.get_record(), 22, SUNNY)
+	var best := _make_label("BEST  %.1f M   ·   %d PTS" % [GameSettings.get_record(), GameSettings.get_score_record()], 22, SUNNY)
 	best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(best)
 
@@ -658,7 +679,10 @@ func _build_pause() -> void:
 	resume.add_theme_font_size_override("font_size", 28)
 	resume.pressed.connect(_resume)
 	box.add_child(resume)
-	var photo := _make_button("PHOTO MODE", SUNNY)
+	var cash := _make_button("CASH OUT", SUNNY)
+	cash.pressed.connect(func() -> void: cash_out_requested.emit())
+	box.add_child(cash)
+	var photo := _make_button("PHOTO MODE", SKY)
 	photo.pressed.connect(start_photo_mode)
 	box.add_child(photo)
 	var settings := _make_button("SETTINGS", TANGERINE)
@@ -774,11 +798,19 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 		_build_game_over_ui()
 		_go_built = true
 	_build_postcard(photo, stats)
-	if stats.get("new_record", false):
+	var cashed: bool = stats.get("cashed", false)
+	if cashed:
+		_go_title.text = "CASHED OUT!"
+	elif stats.get("new_record", false):
 		_go_title.text = "NEW RECORD!"
 	else:
 		_go_title.text = reason
-	_go_subtitle.text = "FINAL SCORE  %d      BEST  %.1f M" % [int(stats["score"]), float(stats.get("record", 0.0))]
+	if cashed:
+		_go_subtitle.text = "BANKED  %d PTS      BEST  %d" % [int(stats["score"]), int(stats.get("score_record", 0))]
+	else:
+		# Busted: show what the pot was and what little survived.
+		_go_subtitle.text = "BUSTED — KEPT %d OF %d PTS      BEST  %d" % [
+				int(stats["score"]), int(stats.get("pot", 0)), int(stats.get("score_record", 0))]
 	_chip_values["HEIGHT"].text = "%.1f m" % float(stats["height"])
 	_chip_values["OBJECTS"].text = "%d" % int(stats["objects"])
 	_chip_values["WEIGHT"].text = "%d kg" % int(round(float(stats["weight"])))

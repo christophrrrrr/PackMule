@@ -47,7 +47,10 @@ func _process(_dt: float) -> bool:
 		300:
 			if not _go:
 				_go = true
-				_gm._game_over("TOO MANY FALLEN OBJECTS")
+				if "cash" in OS.get_cmdline_user_args():
+					_gm._cash_out()
+				else:
+					_gm._game_over("TOO MANY FALLEN OBJECTS")
 	if _frame == 350:
 		var img := root.get_texture().get_image()
 		img.save_png("user://shot.png")

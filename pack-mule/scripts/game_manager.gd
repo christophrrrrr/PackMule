@@ -13,7 +13,8 @@ const STRIKES_TO_LOSE := 3
 const COLLAPSE_COUNT := 3        # this many falls inside the window = collapse
 const COLLAPSE_WINDOW := 2.0     # seconds
 const SCORE_PER_OBJECT := 10
-const HEIGHT_SCORE_PER_METER := 10.0
+const MULT_PER_METER := 0.3       # height multiplier growth: x1 at base, ~x4 at 10 m
+const BUST_KEEP := 0.25           # fraction of the pot kept if the tower collapses
 const AIM_RANGE := 200.0
 const YAW_SPEED := 2.6           # rad/s while holding Q/E
 const DONKEY_LENGTH := 3.0       # normalized donkey body length in meters
@@ -48,7 +49,7 @@ enum Phase { MENU, AIMING, SETTLING, GAME_OVER }
 @onready var _kill_zone: Area3D = $KillZone
 
 var _phase := Phase.MENU
-var _score := 0
+var _pot := 0                    # the running, multiplier-boosted score you can bank
 var _strikes := 0
 var _ghost: GhostPreview
 var _settling: StackableObject
@@ -85,6 +86,7 @@ func _ready() -> void:
 	_hud.to_main_menu_requested.connect(_to_main_menu)
 	_hud.photo_enter_requested.connect(_enter_photo_mode)
 	_hud.photo_to_pause_requested.connect(_photo_to_pause)
+	_hud.cash_out_requested.connect(_cash_out)
 	_hud.wheel_landed.connect(_on_wheel_landed)
 	if _autostart:
 		_autostart = false
@@ -207,6 +209,9 @@ func _check_integrity() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("pm_cashout"):
+		_cash_out()
+		return
 	if event.is_action_pressed("pm_photo"):
 		# Jump straight into photo mode mid-run (also in the pause menu).
 		if _phase == Phase.AIMING or _phase == Phase.SETTLING:
@@ -350,13 +355,21 @@ func _on_object_settled(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
 		return
 	_settled.append(obj)
-	_score += SCORE_PER_OBJECT
+	# Banking: each object is worth more the higher the tower already is,
+	# so climbing fattens the pot you're gambling.
+	_recompute_tower_top()
+	_pot += int(round(SCORE_PER_OBJECT * _height_multiplier()))
 	# Settling is now silent and still — the satisfying feedback already
 	# fired at placement, so coming to rest stays clean.
 	if obj == _settling:
 		_settling = null
 	if _phase == Phase.SETTLING:
 		_spawn_next()
+
+
+## The current height multiplier — grows with how tall the tower stands.
+func _height_multiplier() -> float:
+	return 1.0 + maxf(0.0, _tower_top - _base_top) * MULT_PER_METER
 
 
 ## Every settle (including pieces that re-settle after glue broke): glue
@@ -583,14 +596,17 @@ func _make_visual(path: String, target_size: float) -> Node3D:
 	return holder
 
 
-func _total_score() -> int:
-	return _score + int(roundf(_max_height * HEIGHT_SCORE_PER_METER))
-
-
 func _refresh_hud() -> void:
-	_hud.set_score(_total_score())
+	_hud.set_bank(_pot, _height_multiplier())
 	_hud.set_height(_tower_top - _base_top)
 	_hud.set_strikes(_strikes, STRIKES_TO_LOSE)
+
+
+## Cash out: end the run as a win and bank the full pot. Always available
+## mid-run (key or pause-menu button).
+func _cash_out() -> void:
+	if _phase == Phase.AIMING or _phase == Phase.SETTLING:
+		_game_over("CASHED OUT!", true)
 
 
 func _refresh_modifier_label() -> void:
@@ -609,14 +625,18 @@ func _refresh_incoming(entry: Dictionary) -> void:
 	_hud.set_incoming("INCOMING: %s" % label)
 
 
-func _game_over(reason: String) -> void:
+## `cashed` true = the player banked the pot (a win); false = the tower
+## busted, so only BUST_KEEP of the pot survives.
+func _game_over(reason: String, cashed := false) -> void:
 	_phase = Phase.GAME_OVER
 	if _ghost != null:
 		_ghost.queue_free()
 		_ghost = null
 	_hud.set_in_run(false)        # no pausing on the game-over screen
+	get_tree().paused = false     # in case we cashed out from the pause menu
 	Sfx.stop_wind()
-	Sfx.play("sting")
+	Sfx.play("ding" if cashed else "sting")
+	var banked := _pot if cashed else int(round(_pot * BUST_KEEP))
 	# Freeze the whole scene so the photo is crisp, then frame and shoot the
 	# tower before any UI is shown.
 	Engine.time_scale = 0.0
@@ -627,12 +647,16 @@ func _game_over(reason: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # so the buttons are clickable
 	var is_record := _max_height > _record
 	GameSettings.set_record(maxf(_record, _max_height))
+	GameSettings.set_score_record(maxi(GameSettings.get_score_record(), banked))
 	var stats := {
 		"height": _max_height,
 		"objects": _placed_count,
 		"weight": _total_weight,
-		"score": _total_score(),
+		"score": banked,
+		"pot": _pot,
+		"cashed": cashed,
 		"record": maxf(_record, _max_height),
+		"score_record": GameSettings.get_score_record(),
 		"new_record": is_record,
 	}
 	_hud.show_game_over(reason, stats, photo)

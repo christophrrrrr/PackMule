@@ -36,14 +36,14 @@ func _process(delta: float) -> void:
 		get_tree().quit(1)
 		return
 	if _gm._phase == GameManager.Phase.GAME_OVER:
-		print("[autotest] game over reached after %d drops: score=%d strikes=%d" % [
-			_drops, _gm._total_score(), _gm._strikes])
+		print("[autotest] game over reached after %d drops: pot=%d strikes=%d" % [
+			_drops, _gm._pot, _gm._strikes])
 		get_tree().quit(0)
 		return
 	if _drops >= MAX_DROPS:
 		if _gm._phase == GameManager.Phase.AIMING:  # last drop fully resolved
-			print("[autotest] PASS: drops=%d settled=%d score=%d strikes=%d height=%.2f" % [
-				_drops, _gm._settled.size(), _gm._total_score(), _gm._strikes,
+			print("[autotest] PASS: drops=%d settled=%d pot=%d strikes=%d height=%.2f" % [
+				_drops, _gm._settled.size(), _gm._pot, _gm._strikes,
 				_gm._tower_top - _gm._base_top])
 			get_tree().quit(0)
 		return
