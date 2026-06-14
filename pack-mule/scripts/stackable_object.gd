@@ -40,9 +40,15 @@ var display_name := ""
 var half_extents := Vector3.ONE * 0.5
 var no_glue := false             # Slippery: never locks in
 
+## Impact sounds: only above this speed, and no more often than this, so a
+## tumbling tower clatters without a machine-gun of clicks.
+const IMPACT_MIN_SPEED := 1.6
+const IMPACT_COOLDOWN := 0.12
+
 var _super_glue := false         # bonds instantly on first touch, unbreakable
 var _model: Node3D               # visual mesh root (scaled for the landing pop)
 var _model_scale := Vector3.ONE
+var _impact_cooldown := 0.0
 var _still_time := 0.0
 var _fall_time := 0.0
 var _speed_last_tick := 0.0
@@ -353,6 +359,8 @@ func _physics_process(delta: float) -> void:
 	# Speed entering this tick, captured before the solver runs: body_entered
 	# fires after collision response has already changed the velocity.
 	_speed_last_tick = 0.0 if freeze else linear_velocity.length()
+	if _impact_cooldown > 0.0:
+		_impact_cooldown -= delta
 	if state == State.SETTLED and not freeze \
 			and global_position.distance_squared_to(_settle_pos) > DRIFT_BREAK * DRIFT_BREAK:
 		# A Slippery piece slid away from where it settled: treat as a break
@@ -400,6 +408,13 @@ func _register_supports() -> void:
 func _on_body_entered(body: Node) -> void:
 	if state == State.HELD:
 		return
+	# Clatter when this piece hits something hard (tower, rock, another
+	# object) — the chaos of a tumble, throttled so it never machine-guns.
+	if _impact_cooldown <= 0.0 and _speed_last_tick >= IMPACT_MIN_SPEED:
+		_impact_cooldown = IMPACT_COOLDOWN
+		var pitch := clampf(remap(mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6)
+		var vol := clampf(remap(_speed_last_tick, 1.6, 10.0, -10.0, -2.0), -12.0, -2.0)
+		Sfx.play("thunk", pitch * randf_range(0.95, 1.05), vol)
 	if _super_glue and state == State.FALLING:
 		_settle_now()
 		return

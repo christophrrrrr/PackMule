@@ -29,11 +29,13 @@ func _ready() -> void:
 	_streams["sting"] = _sting()
 	for i in 10:
 		var v := AudioStreamPlayer.new()
+		v.bus = "SFX"  # bus created by GameSettings (added before Sfx)
 		add_child(v)
 		_voices.append(v)
 	_wind = AudioStreamPlayer.new()
 	_wind.stream = _wind_stream()
 	_wind.volume_db = -26.0
+	_wind.bus = "Ambience"
 	add_child(_wind)
 
 

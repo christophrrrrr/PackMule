@@ -22,6 +22,8 @@ const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   
 const POSTCARD_SIZE := Vector2i(1024, 686)  # photo area below is 16:9
 const PC_PAD := 22
 const PC_CAPTION_H := 88
+const GALLERY_DIR := "user://gallery"
+const GALLERY_MAX := 20
 
 @onready var _crosshair: Label = $Crosshair
 @onready var _wheel: ModifierWheel = $WheelOverlay
@@ -37,8 +39,17 @@ var _stats_box: PanelContainer
 var _incoming_box: PanelContainer
 var _hint_box: PanelContainer
 
-# Main menu.
+# Main menu, gallery, settings.
 var _menu: CenterContainer
+var _gallery: CenterContainer
+var _gallery_photo: TextureRect
+var _gallery_counter: Label
+var _gallery_files: PackedStringArray
+var _gallery_index := 0
+var _settings: CenterContainer
+var _listening := ""              # action currently waiting for a new key
+var _listening_btn: Button
+var _bind_buttons := {}
 
 # Game-over panel.
 var _go_built := false
@@ -154,6 +165,10 @@ func show_main_menu() -> void:
 func hide_main_menu() -> void:
 	if _menu != null:
 		_menu.visible = false
+	if _gallery != null:
+		_gallery.visible = false
+	if _settings != null:
+		_settings.visible = false
 
 
 func _build_main_menu() -> void:
@@ -189,6 +204,17 @@ func _build_main_menu() -> void:
 	play.pressed.connect(func() -> void: start_requested.emit())
 	box.add_child(play)
 
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(row)
+	var gallery_btn := _make_button("GALLERY", SKY)
+	gallery_btn.pressed.connect(_open_gallery)
+	row.add_child(gallery_btn)
+	var settings_btn := _make_button("SETTINGS", TANGERINE)
+	settings_btn.pressed.connect(_open_settings)
+	row.add_child(settings_btn)
+
 	var quit := _make_button("QUIT", Color(0.55, 0.55, 0.62))
 	quit.pressed.connect(func() -> void: get_tree().quit())
 	box.add_child(quit)
@@ -196,6 +222,235 @@ func _build_main_menu() -> void:
 	var controls := _make_label(HINT_TEXT, 14, Color(0.8, 0.83, 0.92))
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(controls)
+
+
+# --- Tower gallery -----------------------------------------------------------
+
+func _open_gallery() -> void:
+	if _gallery == null:
+		_build_gallery()
+	_menu.visible = false
+	_gallery.visible = true
+	_load_gallery_files()
+	_gallery_index = _gallery_files.size() - 1  # newest first
+	_show_gallery_photo()
+
+
+func _build_gallery() -> void:
+	_gallery = CenterContainer.new()
+	_gallery.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_gallery.visible = false
+	add_child(_gallery)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SKY, 28, 24))
+	_gallery.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(box)
+
+	var title := _make_label("TOWER GALLERY", 40, SKY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+
+	_gallery_photo = TextureRect.new()
+	_gallery_photo.custom_minimum_size = Vector2(620, 620 * POSTCARD_SIZE.y / POSTCARD_SIZE.x)
+	_gallery_photo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_gallery_photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	box.add_child(_gallery_photo)
+
+	var nav := HBoxContainer.new()
+	nav.add_theme_constant_override("separation", 16)
+	nav.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(nav)
+	var prev := _make_button("< PREV", SKY)
+	prev.pressed.connect(func() -> void: _step_gallery(-1))
+	nav.add_child(prev)
+	_gallery_counter = _make_label("0 / 0", 22, CREAM)
+	_gallery_counter.custom_minimum_size = Vector2(140, 0)
+	_gallery_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_gallery_counter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nav.add_child(_gallery_counter)
+	var next := _make_button("NEXT >", SKY)
+	next.pressed.connect(func() -> void: _step_gallery(1))
+	nav.add_child(next)
+
+	var back := _make_button("BACK", Color(0.55, 0.55, 0.62))
+	back.pressed.connect(_back_to_menu.bind(_gallery))
+	box.add_child(back)
+
+
+func _load_gallery_files() -> void:
+	_gallery_files = PackedStringArray()
+	var dir := DirAccess.open(GALLERY_DIR)
+	if dir == null:
+		return
+	for f in dir.get_files():
+		if f.ends_with(".png"):
+			_gallery_files.append(GALLERY_DIR.path_join(f))
+	_gallery_files.sort()  # filenames are timestamped → chronological
+
+
+func _step_gallery(delta: int) -> void:
+	if _gallery_files.is_empty():
+		return
+	_gallery_index = wrapi(_gallery_index + delta, 0, _gallery_files.size())
+	_show_gallery_photo()
+
+
+func _show_gallery_photo() -> void:
+	if _gallery_files.is_empty():
+		_gallery_photo.texture = null
+		_gallery_counter.text = "EMPTY"
+		return
+	var img := Image.load_from_file(_gallery_files[_gallery_index])
+	_gallery_photo.texture = ImageTexture.create_from_image(img) if img != null else null
+	_gallery_counter.text = "%d / %d" % [_gallery_index + 1, _gallery_files.size()]
+
+
+## Saves the just-built postcard into the rolling in-game gallery.
+func _autosave_gallery() -> void:
+	await RenderingServer.frame_post_draw
+	DirAccess.make_dir_recursive_absolute(GALLERY_DIR)
+	var img := _pc_vp.get_texture().get_image()
+	img.save_png(GALLERY_DIR.path_join("tower_%d.png" % int(Time.get_unix_time_from_system())))
+	# Prune to the most recent GALLERY_MAX.
+	var dir := DirAccess.open(GALLERY_DIR)
+	if dir == null:
+		return
+	var files := []
+	for f in dir.get_files():
+		if f.ends_with(".png"):
+			files.append(f)
+	files.sort()
+	while files.size() > GALLERY_MAX:
+		dir.remove(files.pop_front())
+
+
+# --- Settings ----------------------------------------------------------------
+
+func _open_settings() -> void:
+	if _settings == null:
+		_build_settings()
+	_menu.visible = false
+	_settings.visible = true
+
+
+func _build_settings() -> void:
+	_settings = CenterContainer.new()
+	_settings.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_settings.visible = false
+	add_child(_settings)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, TANGERINE, 30, 24))
+	_settings.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+
+	var title := _make_label("SETTINGS", 40, TANGERINE)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+
+	box.add_child(_make_label("SOUND", 22, SUNNY))
+	box.add_child(_make_volume_row("MASTER", "master"))
+	box.add_child(_make_volume_row("SFX", "sfx"))
+	box.add_child(_make_volume_row("AMBIENCE", "ambience"))
+	var mute := CheckButton.new()
+	mute.text = "MUTE"
+	mute.button_pressed = GameSettings.is_muted()
+	mute.add_theme_color_override("font_color", CREAM)
+	mute.add_theme_color_override("font_pressed_color", CREAM)
+	mute.toggled.connect(func(on: bool) -> void: GameSettings.set_muted(on))
+	box.add_child(mute)
+
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 8)
+	box.add_child(gap)
+	box.add_child(_make_label("CONTROLS", 22, SUNNY))
+	box.add_child(_make_label("CLICK A KEY, THEN PRESS THE NEW ONE  ·  ESC CANCELS", 13, Color(0.8, 0.83, 0.92)))
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(430, 200)
+	box.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 6)
+	scroll.add_child(grid)
+	for b in GameSettings.BINDS:
+		var action: String = b[0]
+		grid.add_child(_make_label(String(b[1]), 16, CREAM))
+		var btn := _make_button(GameSettings.binding_text(action), Color(0.32, 0.34, 0.5))
+		btn.add_theme_font_size_override("font_size", 16)
+		btn.add_theme_color_override("font_color", CREAM)
+		btn.pressed.connect(_begin_listen.bind(action, btn))
+		_bind_buttons[action] = btn
+		grid.add_child(btn)
+
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 16)
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(buttons)
+	var reset := _make_button("RESET KEYS", Color(0.55, 0.55, 0.62))
+	reset.pressed.connect(_reset_binds)
+	buttons.add_child(reset)
+	var back := _make_button("BACK", LEAF)
+	back.pressed.connect(_back_to_menu.bind(_settings))
+	buttons.add_child(back)
+
+
+func _make_volume_row(label: String, kind: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var name := _make_label(label, 16, CREAM)
+	name.custom_minimum_size = Vector2(150, 0)
+	row.add_child(name)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = GameSettings.get_volume(kind)
+	slider.custom_minimum_size = Vector2(280, 0)
+	slider.value_changed.connect(func(v: float) -> void: GameSettings.set_volume(kind, v))
+	row.add_child(slider)
+	return row
+
+
+func _begin_listen(action: String, btn: Button) -> void:
+	_listening = action
+	_listening_btn = btn
+	btn.text = "PRESS A KEY..."
+
+
+func _reset_binds() -> void:
+	GameSettings.reset_binds()
+	for action in _bind_buttons:
+		(_bind_buttons[action] as Button).text = GameSettings.binding_text(action)
+
+
+func _back_to_menu(panel: CenterContainer) -> void:
+	panel.visible = false
+	_menu.visible = true
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _listening.is_empty():
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		get_viewport().set_input_as_handled()
+		if (event as InputEventKey).keycode != KEY_ESCAPE:
+			GameSettings.rebind(_listening, event)
+		_listening_btn.text = GameSettings.binding_text(_listening)
+		_listening = ""
+	elif event is InputEventMouseButton and event.pressed:
+		get_viewport().set_input_as_handled()
+		GameSettings.rebind(_listening, event)
+		_listening_btn.text = GameSettings.binding_text(_listening)
+		_listening = ""
 
 
 # --- Game-over panel ---------------------------------------------------------
@@ -214,6 +469,7 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 	_saved_label.visible = false
 	_game_over.visible = true
 	_pop_in_panel()
+	_autosave_gallery()
 
 
 ## A quick scale-in so the game-over panel lands with some bounce. Runs on

@@ -18,6 +18,10 @@ func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames == 6 and ("play" in OS.get_cmdline_user_args() or "dust" in OS.get_cmdline_user_args()):
 		(root.get_node("Main") as GameManager)._start_game()
+	if _frames == 8 and "settings" in OS.get_cmdline_user_args():
+		(root.get_node("Main/HUD") as GameHud)._open_settings()
+	if _frames == 8 and "galleryview" in OS.get_cmdline_user_args():
+		(root.get_node("Main/HUD") as GameHud)._open_gallery()
 	if _frames == 14 and "dust" in OS.get_cmdline_user_args():
 		var gm := root.get_node("Main") as GameManager
 		gm.set_physics_process(false)

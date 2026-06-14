@@ -54,17 +54,17 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	var dir := Vector3.ZERO
 	var b := transform.basis
-	if Input.is_key_pressed(KEY_W):
+	if Input.is_action_pressed("pm_forward"):
 		dir -= b.z
-	if Input.is_key_pressed(KEY_S):
+	if Input.is_action_pressed("pm_back"):
 		dir += b.z
-	if Input.is_key_pressed(KEY_A):
+	if Input.is_action_pressed("pm_left"):
 		dir -= b.x
-	if Input.is_key_pressed(KEY_D):
+	if Input.is_action_pressed("pm_right"):
 		dir += b.x
-	if Input.is_key_pressed(KEY_SPACE):
+	if Input.is_action_pressed("pm_up"):
 		dir += Vector3.UP
-	if Input.is_key_pressed(KEY_CTRL):
+	if Input.is_action_pressed("pm_down"):
 		dir -= Vector3.UP
 	if dir != Vector3.ZERO:
 		var speed := _speed * (SPRINT_MULT if Input.is_key_pressed(KEY_SHIFT) else 1.0)

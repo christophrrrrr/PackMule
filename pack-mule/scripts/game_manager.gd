@@ -68,6 +68,7 @@ var _started := false            # the run has begun (past the main menu)
 
 func _ready() -> void:
 	Engine.time_scale = 1.0       # a previous run froze the scene for its photo
+	add_child(GameSettings.new()) # audio buses + remappable input actions (before Sfx)
 	add_child(Sfx.new())          # the procedural sound bank (Sfx.play(...))
 	_rng.randomize()
 	_setup_mountain()
@@ -111,9 +112,9 @@ func _on_restart() -> void:
 func _process(delta: float) -> void:
 	if _phase != Phase.AIMING or _ghost == null:
 		return
-	if Input.is_key_pressed(KEY_Q):
+	if Input.is_action_pressed("pm_rotate_left"):
 		_ghost.spin(YAW_SPEED * delta)
-	if Input.is_key_pressed(KEY_E):
+	if Input.is_action_pressed("pm_rotate_right"):
 		_ghost.spin(-YAW_SPEED * delta)
 
 
@@ -167,23 +168,20 @@ func _check_integrity() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo \
-			and event.keycode == KEY_TAB:
+	if event.is_action_pressed("pm_spin"):
 		# One spin per object: the wheel unlocks again once the modified
 		# object has been placed. Spinning while one settles is fine — the
-		# result lands on the next object.
-		if _phase != Phase.GAME_OVER and _pending_mod.is_empty() \
-				and not _hud.wheel_busy():
+		# result lands on the next object. Only during an active run.
+		if (_phase == Phase.AIMING or _phase == Phase.SETTLING) \
+				and _pending_mod.is_empty() and not _hud.wheel_busy():
 			_hud.spin_wheel()
 		return
 	if _phase != Phase.AIMING or _ghost == null:
 		return
-	if event is InputEventMouseButton and event.pressed \
-			and event.button_index == MOUSE_BUTTON_LEFT:
+	if event.is_action_pressed("pm_place"):
 		if _ghost.visible and _ghost.valid:
 			_place_object(_ghost.entry, _ghost.global_transform)
-	elif event is InputEventKey and event.pressed and not event.echo \
-			and event.keycode == KEY_R:
+	elif event.is_action_pressed("pm_tip"):
 		# Tip the object 90 degrees around the camera's horizontal axis,
 		# so "R" always tips it left/right as seen on screen.
 		var axis := _camera.global_transform.basis.x
@@ -411,13 +409,16 @@ func _capture_tower_photo() -> Image:
 	var aspect := vp.x / vp.y
 	var v_half := deg_to_rad(_camera.fov * 0.5)        # vertical half-FOV
 	var h_half := atan(tan(v_half) * aspect)           # horizontal half-FOV
-	# Side-on profile of the mule, lifted a touch for a sense of depth.
-	var dir := Vector3(1.0, 0.12, 0.0).normalized()
-	# Distance that just fits the tower's height (vertical) and its widest
-	# horizontal spread (whichever needs the camera farther wins).
+	# Side-on profile of the mule. Kept nearly level (small Y) so the
+	# vertical framing stays symmetric and the top never clips; a little Z
+	# gives a hint of three-quarter depth.
+	var dir := Vector3(1.0, 0.05, 0.22).normalized()
+	# Distance that fits the tower's height (vertical) and its widest
+	# horizontal spread (whichever needs the camera farther wins), with
+	# generous margin so the whole tower is always inside the frame.
 	var dist_v := (aabb.size.y * 0.5) / tan(v_half)
 	var dist_h := (maxf(aabb.size.x, aabb.size.z) * 0.5) / tan(h_half)
-	var dist := maxf(dist_v, dist_h) * 1.06
+	var dist := maxf(dist_v, dist_h) * 1.18
 	_camera.global_position = center + dir * dist
 	_camera.look_at(center, Vector3.UP)
 	# Let the moved camera render before grabbing the frame.
@@ -466,12 +467,18 @@ func _spawn_dust(pos: Vector3, count: int, scale: float) -> void:
 	get_tree().create_timer(1.4).timeout.connect(p.queue_free)
 
 
-## World-space box around the donkey and every object still on the tower.
+## World-space box around the donkey and every object that belongs to the
+## tower — settled pieces plus the one still coming to rest on top — so the
+## photo never cuts the top off. Stray tumbling debris is excluded so it
+## can't blow the framing out.
 func _tower_world_aabb() -> AABB:
 	# Start with the donkey/summit region so the mule is always in shot.
 	var aabb := AABB(Vector3(-1.9, -0.4, -1.9), Vector3(3.8, 3.0, 3.8))
-	for obj in _settled:
-		if not is_instance_valid(obj):
+	var members: Array[StackableObject] = _settled.duplicate()
+	if _settling != null and _settling not in members:
+		members.append(_settling)
+	for obj: StackableObject in members:
+		if not is_instance_valid(obj) or obj.state == StackableObject.State.FALLEN:
 			continue
 		var t := obj.global_transform
 		var he := obj.half_extents
