@@ -30,6 +30,12 @@ func _process(_delta: float) -> bool:
 		var gm := root.get_node("Main") as GameManager
 		gm._start_game()
 		gm._event_fireworks()
+	if "photobar" in OS.get_cmdline_user_args():
+		var gm := root.get_node("Main") as GameManager
+		if _frames == 6:
+			gm._start_game()
+		if _frames == 12:
+			(root.get_node("Main/HUD") as GameHud).start_photo_mode(true)
 	if "photomode" in OS.get_cmdline_user_args():
 		var gm := root.get_node("Main") as GameManager
 		if _frames == 6:

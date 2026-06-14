@@ -133,11 +133,15 @@ func _enter_photo_mode(_from_pause: bool) -> void:
 		_ghost.visible = false  # no blueprint in the photo
 	_camera_rig.process_mode = Node.PROCESS_MODE_ALWAYS
 	_camera_rig.set_process(true)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_camera_rig.set_freelook(true)
+	# Cursor stays visible so the on-screen photo buttons are clickable;
+	# the player holds right-mouse to look around.
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _exit_photo_mode(from_pause: bool) -> void:
 	_camera_rig.process_mode = Node.PROCESS_MODE_PAUSABLE
+	_camera_rig.set_freelook(false)
 	if from_pause:
 		# Back to the (still paused) pause menu.
 		_camera_rig.set_process(false)

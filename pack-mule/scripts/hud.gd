@@ -67,7 +67,7 @@ var _flash: ColorRect
 var _record_banner: Label
 var _photo := false
 var _photo_from_pause := false
-var _photo_hint: Label
+var _photo_bar: PanelContainer
 
 # Game-over panel.
 var _go_built := false
@@ -681,21 +681,43 @@ func start_photo_mode(from_pause: bool) -> void:
 		_pause.visible = false
 	set_in_game_hud_visible(false)
 	_photo = true
-	if _photo_hint == null:
-		_photo_hint = _make_label("PHOTO MODE   ·   FLY: WASD + MOUSE   ·   [P] SNAP   ·   [ESC] BACK", 16, CREAM)
-		_photo_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-		_photo_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
-		_photo_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
-		_photo_hint.offset_top = -40
-		add_child(_photo_hint)
-	_photo_hint.visible = true
+	if _photo_bar == null:
+		_build_photo_bar()
+	_photo_bar.visible = true
 	photo_enter_requested.emit(_photo_from_pause)
+
+
+## A small top toolbar shown in photo mode: a hint plus Snap and Builder
+## Mode (exit) buttons. The cursor is visible here so these are clickable.
+func _build_photo_bar() -> void:
+	_photo_bar = PanelContainer.new()
+	_photo_bar.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 16, SUNNY, 16, 8))
+	_photo_bar.anchor_left = 0.5
+	_photo_bar.anchor_right = 0.5
+	_photo_bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_photo_bar.offset_top = 12
+	add_child(_photo_bar)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_photo_bar.add_child(row)
+	var hint := _make_label("PHOTO MODE  ·  WASD FLY  ·  HOLD RIGHT-MOUSE TO LOOK", 16, CREAM)
+	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(hint)
+	var snap := _make_button("SNAP PHOTO", SKY)
+	snap.add_theme_font_size_override("font_size", 18)
+	snap.pressed.connect(_snap_photo)
+	row.add_child(snap)
+	var exit := _make_button("BUILDER MODE", LEAF)
+	exit.add_theme_font_size_override("font_size", 18)
+	exit.pressed.connect(_end_photo_mode)
+	row.add_child(exit)
 
 
 func _end_photo_mode() -> void:
 	_photo = false
-	if _photo_hint != null:
-		_photo_hint.visible = false
+	if _photo_bar != null:
+		_photo_bar.visible = false
 	photo_exit_requested.emit(_photo_from_pause)
 	if _photo_from_pause:
 		if _pause != null:
@@ -706,7 +728,8 @@ func _end_photo_mode() -> void:
 
 
 func _snap_photo() -> void:
-	_photo_hint.visible = false
+	if _photo_bar != null:
+		_photo_bar.visible = false
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	Sfx.play("tick", 1.3)
@@ -718,8 +741,8 @@ func _snap_photo() -> void:
 	if pics.is_empty():
 		pics = OS.get_user_data_dir()
 	img.save_png(pics.path_join("PackMule_%d.png" % int(Time.get_unix_time_from_system())))
-	if _photo:
-		_photo_hint.visible = true
+	if _photo and _photo_bar != null:
+		_photo_bar.visible = true
 
 
 func _unhandled_input(event: InputEvent) -> void:
