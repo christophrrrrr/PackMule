@@ -32,8 +32,8 @@ func _mod(mod_name: String) -> Dictionary:
 func _init() -> void:
 	var safe := _entry("Safe")
 	_check("Traffic Cone removed", _entry("Traffic Cone").is_empty())
-	_check("catalog has 20 objects", ObjectCatalog.ENTRIES.size() == 20)
-	for n in ["Bear", "Grill", "Helicopter", "T-Rex", "Windmill"]:
+	_check("catalog has 22 objects", ObjectCatalog.ENTRIES.size() == 22)
+	for n in ["Helicopter", "T-Rex", "Windmill", "Alien", "Flying Saucer"]:
 		_check("catalog has %s" % n, not _entry(n).is_empty())
 
 	var plain := StackableObject.create(safe)

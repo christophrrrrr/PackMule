@@ -124,18 +124,27 @@ func _to_main_menu() -> void:
 	get_tree().reload_current_scene()
 
 
-## Photo mode (from the pause menu): the scene stays frozen (tree paused)
-## but the camera can fly so the player can compose a shot of their tower.
-func _enter_photo_mode() -> void:
+## Photo mode: the scene freezes (tree paused) but the camera can fly so the
+## player can compose a shot of their tower. Reachable from the pause menu
+## or directly with the photo hotkey mid-run.
+func _enter_photo_mode(_from_pause: bool) -> void:
+	get_tree().paused = true
 	_camera_rig.process_mode = Node.PROCESS_MODE_ALWAYS
 	_camera_rig.set_process(true)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-func _exit_photo_mode() -> void:
+func _exit_photo_mode(from_pause: bool) -> void:
 	_camera_rig.process_mode = Node.PROCESS_MODE_PAUSABLE
-	_camera_rig.set_process(false)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if from_pause:
+		# Back to the (still paused) pause menu.
+		_camera_rig.set_process(false)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	else:
+		# Straight back into play.
+		get_tree().paused = false
+		_camera_rig.set_process(true)
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func _on_restart() -> void:
@@ -202,6 +211,11 @@ func _check_integrity() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("pm_photo"):
+		# Jump straight into photo mode mid-run (also in the pause menu).
+		if _phase == Phase.AIMING or _phase == Phase.SETTLING:
+			_hud.start_photo_mode(false)
+		return
 	if event.is_action_pressed("pm_spin"):
 		# One spin per object: the wheel unlocks again once the modified
 		# object has been placed. Spinning while one settles is fine — the
@@ -331,9 +345,10 @@ func _on_object_settled(obj: StackableObject) -> void:
 		return
 	_settled.append(obj)
 	_score += SCORE_PER_OBJECT
-	# Landing juice: a squash pop, a mass-pitched thunk, dust, and a kick.
+	# Landing juice: a squash pop, a mass-pitched material sound, dust, kick.
 	obj.pop()
-	Sfx.play("thunk", clampf(remap(obj.mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6))
+	Sfx.play_at(obj.impact_sound(), obj.global_position,
+			clampf(remap(obj.mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6))
 	_spawn_dust(obj.global_position - Vector3(0.0, obj.half_extents.y, 0.0), 10, 1.0)
 	_camera_rig.shake(clampf(obj.mass / 500.0, 0.04, 0.16))
 	if obj == _settling:
@@ -370,7 +385,7 @@ func _on_object_fell(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER:
 		return
 	# Falling juice (a tumble off the tower is dramatic).
-	Sfx.play("crash", randf_range(0.9, 1.1))
+	Sfx.play_at("crash", obj.global_position, randf_range(0.9, 1.1))
 	_spawn_dust(obj.global_position, 16, 1.4)
 	_camera_rig.shake(0.22)
 	_settled.erase(obj)
@@ -420,28 +435,31 @@ func _check_milestones(h: float) -> void:
 
 ## Background flavor at altitude — a different one cycles each milestone.
 func _fire_event(milestone: int) -> void:
-	match (milestone - 1) % 4:
-		0: _event_birds()
+	match (milestone - 1) % 7:
+		0: _event_eagles()
 		1: _event_lightning()
 		2: _event_helicopter()
-		_: _event_star()
+		3: _event_balloon()
+		4: _event_star()
+		5: _event_airship()
+		_: _event_fireworks()
 
 
-func _event_birds() -> void:
+func _event_eagles() -> void:
 	var sign := 1.0 if _rng.randf() < 0.5 else -1.0
-	var y := _rng.randf_range(7.0, 16.0)
+	var y := _rng.randf_range(8.0, 17.0)
 	var z := _rng.randf_range(-20.0, 25.0)
 	var flock := Node3D.new()
 	add_child(flock)
-	for i in 7:
-		var bird := _make_visual("res://assets/Bird.glb", 1.3)
-		flock.add_child(bird)
-		var off := Vector3(_rng.randf_range(-7.0, 7.0), _rng.randf_range(-2.5, 2.5), _rng.randf_range(-7.0, 7.0))
-		bird.position = Vector3(-70.0 * sign, y, z) + off
-		bird.rotation.y = -PI / 2.0 * sign
+	for i in 5:
+		var eagle := _make_visual("res://assets/Eagle.glb", 2.4)
+		flock.add_child(eagle)
+		var off := Vector3(_rng.randf_range(-8.0, 8.0), _rng.randf_range(-3.0, 3.0), _rng.randf_range(-8.0, 8.0))
+		eagle.position = Vector3(-75.0 * sign, y, z) + off
+		eagle.rotation.y = -PI / 2.0 * sign
 		var tw := create_tween()
-		tw.tween_property(bird, "position",
-				Vector3(70.0 * sign, y + _rng.randf_range(-1.5, 1.5), z) + off, _rng.randf_range(5.0, 7.0))
+		tw.tween_property(eagle, "position",
+				Vector3(75.0 * sign, y + _rng.randf_range(-1.5, 1.5), z) + off, _rng.randf_range(5.0, 7.0))
 	get_tree().create_timer(8.0).timeout.connect(flock.queue_free)
 
 
@@ -451,16 +469,81 @@ func _event_lightning() -> void:
 
 
 func _event_helicopter() -> void:
+	_flyby("res://assets/Helicopter.glb", 4.5, _rng.randf_range(9.0, 17.0), 7.0)
+
+
+func _event_balloon() -> void:
+	# Drifts slowly across and gently rises.
 	var sign := 1.0 if _rng.randf() < 0.5 else -1.0
-	var y := _rng.randf_range(9.0, 17.0)
-	var z := _rng.randf_range(-15.0, 30.0)
-	var heli := _make_visual("res://assets/Helicopter.glb", 4.5)
-	add_child(heli)
-	heli.position = Vector3(-90.0 * sign, y, z)
-	heli.rotation.y = PI / 2.0 * sign
+	var y := _rng.randf_range(6.0, 12.0)
+	var z := _rng.randf_range(-10.0, 30.0)
+	var balloon := _make_visual("res://assets/Hot air balloon.glb", 7.0)
+	add_child(balloon)
+	balloon.position = Vector3(-80.0 * sign, y, z)
 	var tw := create_tween()
-	tw.tween_property(heli, "position", Vector3(90.0 * sign, y, z), 7.0)
-	get_tree().create_timer(8.0).timeout.connect(heli.queue_free)
+	tw.tween_property(balloon, "position", Vector3(80.0 * sign, y + 6.0, z), 12.0)
+	get_tree().create_timer(13.0).timeout.connect(balloon.queue_free)
+
+
+func _event_airship() -> void:
+	_flyby("res://assets/Airship.glb", 11.0, _rng.randf_range(12.0, 20.0), 11.0)
+
+
+func _event_fireworks() -> void:
+	var palette := [Color(1, 0.4, 0.4), Color(0.5, 0.8, 1.0), Color(1.0, 0.9, 0.4),
+			Color(0.6, 1.0, 0.6), Color(1.0, 0.6, 1.0)]
+	for i in 4:
+		var pos := Vector3(_rng.randf_range(-30.0, 30.0), _rng.randf_range(16.0, 26.0), _rng.randf_range(-25.0, 25.0))
+		var col: Color = palette[_rng.randi() % palette.size()]
+		get_tree().create_timer(i * 0.5).timeout.connect(_spawn_firework.bind(pos, col))
+
+
+func _spawn_firework(pos: Vector3, col: Color) -> void:
+	var p := CPUParticles3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.18
+	mesh.height = 0.36
+	mesh.radial_segments = 5
+	mesh.rings = 3
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.emission_enabled = true
+	mat.emission = col
+	mesh.material = mat
+	p.mesh = mesh
+	p.one_shot = true
+	p.explosiveness = 1.0
+	p.amount = 60
+	p.lifetime = 1.4
+	p.direction = Vector3.UP
+	p.spread = 180.0
+	p.initial_velocity_min = 8.0
+	p.initial_velocity_max = 14.0
+	p.gravity = Vector3(0.0, -6.0, 0.0)
+	p.color = col
+	var ramp := Gradient.new()
+	ramp.set_color(0, col)
+	ramp.set_color(1, Color(col.r, col.g, col.b, 0.0))
+	p.color_ramp = ramp
+	add_child(p)
+	p.position = pos
+	p.emitting = true
+	Sfx.play("crash", _rng.randf_range(1.6, 2.0), -8.0)
+	get_tree().create_timer(2.0).timeout.connect(p.queue_free)
+
+
+## A simple straight fly-by across the sky for a vehicle/creature.
+func _flyby(path: String, size: float, y: float, secs: float) -> void:
+	var sign := 1.0 if _rng.randf() < 0.5 else -1.0
+	var z := _rng.randf_range(-15.0, 30.0)
+	var node := _make_visual(path, size)
+	add_child(node)
+	node.position = Vector3(-95.0 * sign, y, z)
+	node.rotation.y = PI / 2.0 * sign
+	var tw := create_tween()
+	tw.tween_property(node, "position", Vector3(95.0 * sign, y, z), secs)
+	get_tree().create_timer(secs + 1.0).timeout.connect(node.queue_free)
 
 
 func _event_star() -> void:

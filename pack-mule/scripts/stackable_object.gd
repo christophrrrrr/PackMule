@@ -39,6 +39,7 @@ var state := State.HELD
 var display_name := ""
 var half_extents := Vector3.ONE * 0.5
 var no_glue := false             # Slippery: never locks in
+var sound := "wood"              # impact material (see ObjectCatalog)
 
 ## Impact sounds: only above this speed, and no more often than this, so a
 ## tumbling tower clatters without a machine-gun of clicks.
@@ -76,6 +77,7 @@ static func create(entry: Dictionary, modifier: Dictionary = {}, golden := false
 	obj.physics_material_override = mat
 	obj.no_glue = modifier.get("no_glue", false)
 	obj._super_glue = modifier.get("super_glue", false)
+	obj.sound = entry.get("sound", "wood")
 	# Impact reporting, so hard hits can break glue (and Super Glue can bond).
 	obj.contact_monitor = true
 	obj.max_contacts_reported = 8
@@ -306,6 +308,11 @@ func break_loose(force := false) -> void:
 		d.break_loose()
 
 
+## The Sfx stream name for this object's material ("wood" → the woody thunk).
+func impact_sound() -> String:
+	return "thunk" if sound == "wood" else sound
+
+
 ## A quick squash-and-stretch on the visual mesh (collision is untouched),
 ## for a satisfying "landed" pop. Bigger pieces pop a touch harder.
 func pop() -> void:
@@ -418,8 +425,9 @@ func _on_body_entered(body: Node) -> void:
 		_impact_cooldown = IMPACT_COOLDOWN
 		var pitch := clampf(remap(mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6)
 		var vol := clampf(remap(_speed_last_tick, 1.6, 10.0, -10.0, -2.0), -12.0, -2.0)
-		var snd := "rock" if body.is_in_group("mountain") else "thunk"
-		Sfx.play(snd, pitch * randf_range(0.95, 1.05), vol)
+		var snd := "rock" if body.is_in_group("mountain") else impact_sound()
+		# Positional, so it's quiet when the player is flying far away.
+		Sfx.play_at(snd, global_position, pitch * randf_range(0.95, 1.05), vol)
 	if _super_glue and state == State.FALLING:
 		_settle_now()
 		return

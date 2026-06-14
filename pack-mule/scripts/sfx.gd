@@ -9,11 +9,18 @@ extends Node
 
 const RATE := 44100
 
+## Beyond this distance from the listener (camera), positional sounds are
+## inaudible — so an object landing far below the flying player is quiet.
+const SFX_MAX_DISTANCE := 110.0
+const SFX_UNIT_SIZE := 14.0
+
 static var _inst: Sfx
 
 var _streams := {}
-var _voices: Array[AudioStreamPlayer] = []
+var _voices: Array[AudioStreamPlayer] = []         # 2D: UI / non-positional
+var _voices3d: Array[AudioStreamPlayer3D] = []     # positional: impacts
 var _next := 0
+var _next3d := 0
 var _wind: AudioStreamPlayer
 var _enabled := true
 
@@ -22,7 +29,12 @@ func _ready() -> void:
 	_inst = self
 	# No audio device in headless test runs — stay silent but harmless.
 	_enabled = DisplayServer.get_name() != "headless"
-	_streams["thunk"] = _thunk()
+	_streams["thunk"] = _thunk()        # wood
+	_streams["metal"] = _metal()
+	_streams["soft"] = _soft()
+	_streams["glass"] = _glass()
+	_streams["piano"] = _piano()
+	_streams["critter"] = _critter()
 	_streams["rock"] = _rock()
 	_streams["crash"] = _crash()
 	_streams["thunder"] = _thunder()
@@ -34,6 +46,14 @@ func _ready() -> void:
 		v.bus = "SFX"  # bus created by GameSettings (added before Sfx)
 		add_child(v)
 		_voices.append(v)
+	for i in 14:
+		var v3 := AudioStreamPlayer3D.new()
+		v3.bus = "SFX"
+		v3.max_distance = SFX_MAX_DISTANCE
+		v3.unit_size = SFX_UNIT_SIZE
+		v3.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		add_child(v3)
+		_voices3d.append(v3)
 	_wind = AudioStreamPlayer.new()
 	_wind.stream = _wind_stream()
 	_wind.volume_db = -26.0
@@ -41,9 +61,17 @@ func _ready() -> void:
 	add_child(_wind)
 
 
+## Non-positional (UI, wheel, stings) — same volume regardless of camera.
 static func play(name: String, pitch := 1.0, volume_db := 0.0) -> void:
 	if _inst != null:
 		_inst._play(name, pitch, volume_db)
+
+
+## Positional — plays at a world point so it fades with distance from the
+## flying camera (the audio listener). Used for impacts and landings.
+static func play_at(name: String, pos: Vector3, pitch := 1.0, volume_db := 0.0) -> void:
+	if _inst != null:
+		_inst._play_at(name, pos, pitch, volume_db)
 
 
 static func start_wind() -> void:
@@ -64,6 +92,18 @@ func _play(name: String, pitch: float, volume_db: float) -> void:
 	v.stream = _streams[name]
 	v.pitch_scale = pitch
 	v.volume_db = volume_db
+	v.play()
+
+
+func _play_at(name: String, pos: Vector3, pitch: float, volume_db: float) -> void:
+	if not _enabled or not _streams.has(name):
+		return
+	var v := _voices3d[_next3d]
+	_next3d = (_next3d + 1) % _voices3d.size()
+	v.stream = _streams[name]
+	v.pitch_scale = pitch
+	v.volume_db = volume_db
+	v.global_position = pos
 	v.play()
 
 
@@ -99,6 +139,83 @@ func _thunk() -> AudioStreamWAV:
 		var body := sin(TAU * f * t)
 		var click := (randf() * 2.0 - 1.0) * exp(-t * 130.0) * 0.3
 		s[i] = (body * 0.8 + click) * env * 0.7
+	return _wav(s)
+
+
+## Metal clang — inharmonic ringing partials with a bright transient.
+func _metal() -> AudioStreamWAV:
+	var dur := 0.45
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var f := 520.0
+	for i in n:
+		var t := float(i) / RATE
+		var ring := sin(TAU * f * t) * 0.5 + sin(TAU * f * 2.76 * t) * 0.3 \
+				+ sin(TAU * f * 5.4 * t) * 0.2
+		var click := (randf() * 2.0 - 1.0) * exp(-t * 200.0) * 0.4
+		s[i] = ring * exp(-t * 9.0) * 0.55 + click
+	return _wav(s)
+
+
+## Soft thud — cushion / cloth / rubber: low and quickly muffled.
+func _soft() -> AudioStreamWAV:
+	var dur := 0.16
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		lp = lp * 0.8 + (randf() * 2.0 - 1.0) * 0.2
+		var body := sin(TAU * 120.0 * t) * 0.5
+		s[i] = (body + lp * 0.3) * exp(-t * 32.0) * 0.5
+	return _wav(s)
+
+
+## Ceramic / glass clink — high and bright with a fast decay.
+func _glass() -> AudioStreamWAV:
+	var dur := 0.3
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var ring := sin(TAU * 2100.0 * t) * 0.6 + sin(TAU * 3170.0 * t) * 0.4
+		var click := (randf() * 2.0 - 1.0) * exp(-t * 400.0) * 0.25
+		s[i] = ring * exp(-t * 16.0) * 0.4 + click
+	return _wav(s)
+
+
+## Piano — a little chord (root + fifth + octave) so dropping the piano
+## actually plays a note. Decays like a struck string.
+func _piano() -> AudioStreamWAV:
+	var dur := 0.9
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var root := 196.0  # G3
+	for i in n:
+		var t := float(i) / RATE
+		var env := exp(-t * 4.0) * (1.0 - exp(-t * 200.0))
+		var chord := sin(TAU * root * t) * 0.5 + sin(TAU * root * 1.5 * t) * 0.3 \
+				+ sin(TAU * root * 2.0 * t) * 0.25
+		s[i] = chord * env * 0.5
+	return _wav(s)
+
+
+## Critter — a soft organic "bonk" with a quick pitch drop, for animals.
+func _critter() -> AudioStreamWAV:
+	var dur := 0.2
+	var n := int(RATE * dur)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var f := lerpf(280.0, 150.0, clampf(t / dur, 0.0, 1.0))
+		var body := sin(TAU * f * t)
+		var grit := (randf() * 2.0 - 1.0) * exp(-t * 60.0) * 0.2
+		s[i] = (body * 0.7 + grit) * exp(-t * 16.0) * 0.5
 	return _wav(s)
 
 

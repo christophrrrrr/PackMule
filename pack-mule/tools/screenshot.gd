@@ -24,8 +24,20 @@ func _process(_delta: float) -> bool:
 	if _frames == 6 and "birds" in OS.get_cmdline_user_args():
 		var gm := root.get_node("Main") as GameManager
 		gm._start_game()
-		gm._event_birds()
-		gm._event_helicopter()
+		gm._event_eagles()
+		gm._event_balloon()
+	if _frames == 6 and "fireworks" in OS.get_cmdline_user_args():
+		var gm := root.get_node("Main") as GameManager
+		gm._start_game()
+		gm._event_fireworks()
+	if "photomode" in OS.get_cmdline_user_args():
+		var gm := root.get_node("Main") as GameManager
+		if _frames == 6:
+			gm._start_game()
+		if _frames == 12:
+			(root.get_node("Main/HUD") as GameHud).start_photo_mode(false)
+		if _frames == 40:
+			(root.get_node("Main/HUD") as GameHud)._snap_photo()
 	if _frames == 8 and "odds" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_odds()
 	if _frames == 8 and "settings" in OS.get_cmdline_user_args():

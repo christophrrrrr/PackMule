@@ -23,6 +23,7 @@ const BINDS := [
 	["pm_tip", "Tip Over", KEY_R, -1],
 	["pm_spin", "Spin Wheel", KEY_TAB, -1],
 	["pm_place", "Place Object", -1, MOUSE_BUTTON_LEFT],
+	["pm_photo", "Photo Mode", KEY_C, -1],
 ]
 
 static var _inst: GameSettings

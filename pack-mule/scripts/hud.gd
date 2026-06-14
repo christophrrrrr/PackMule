@@ -8,8 +8,8 @@ extends CanvasLayer
 signal restart_requested
 signal start_requested
 signal to_main_menu_requested
-signal photo_enter_requested
-signal photo_exit_requested
+signal photo_enter_requested(from_pause: bool)
+signal photo_exit_requested(from_pause: bool)
 signal wheel_landed(modifier: Dictionary)
 
 # Cartoon palette.
@@ -21,7 +21,7 @@ const SKY := Color(0.36, 0.74, 1.0)
 const LEAF := Color(0.42, 0.80, 0.36)
 const TANGERINE := Color(1.0, 0.55, 0.21)
 
-const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   LMB PLACE   ·   TAB SPIN WHEEL   ·   ESC PAUSE"
+const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   LMB PLACE   ·   TAB SPIN WHEEL   ·   C PHOTO   ·   ESC PAUSE"
 const POSTCARD_SIZE := Vector2i(1024, 686)  # photo area below is 16:9
 const PC_PAD := 22
 const PC_CAPTION_H := 88
@@ -66,6 +66,7 @@ var _odds_pct := {}               # entry name -> percent Label
 var _flash: ColorRect
 var _record_banner: Label
 var _photo := false
+var _photo_from_pause := false
 var _photo_hint: Label
 
 # Game-over panel.
@@ -656,7 +657,7 @@ func _build_pause() -> void:
 	resume.pressed.connect(_resume)
 	box.add_child(resume)
 	var photo := _make_button("PHOTO MODE", SUNNY)
-	photo.pressed.connect(_start_photo_mode)
+	photo.pressed.connect(start_photo_mode.bind(true))
 	box.add_child(photo)
 	var settings := _make_button("SETTINGS", TANGERINE)
 	settings.pressed.connect(func() -> void: _open_settings(_pause))
@@ -670,7 +671,12 @@ func _build_pause() -> void:
 
 
 ## Photo mode: frozen scene, free camera, hidden UI, snap a shot.
-func _start_photo_mode() -> void:
+## `from_pause` true = opened via the pause menu (return to it on exit);
+## false = opened with the hotkey mid-run (return to play on exit).
+func start_photo_mode(from_pause: bool) -> void:
+	if _photo:
+		return
+	_photo_from_pause = from_pause
 	if _pause != null:
 		_pause.visible = false
 	set_in_game_hud_visible(false)
@@ -683,15 +689,15 @@ func _start_photo_mode() -> void:
 		_photo_hint.offset_top = -40
 		add_child(_photo_hint)
 	_photo_hint.visible = true
-	photo_enter_requested.emit()
+	photo_enter_requested.emit(_photo_from_pause)
 
 
 func _end_photo_mode() -> void:
 	_photo = false
 	if _photo_hint != null:
 		_photo_hint.visible = false
-	photo_exit_requested.emit()
-	if _pause != null:
+	photo_exit_requested.emit(_photo_from_pause)
+	if _photo_from_pause and _pause != null:
 		_pause.visible = true
 
 
