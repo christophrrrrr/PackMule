@@ -40,11 +40,15 @@ func _process(_dt: float) -> bool:
 		23: _place("Toilet", base + 2.5)
 		27: _place("Chair", base + 3.4)
 		31: _place("Trashcan", base + 4.3)
-		220:
+		35: _place("Refrigerator", base + 5.3)
+		39: _place("Piano", base + 6.5)
+		43: _place("Couch", base + 7.7)
+		47: _place("Cow", base + 9.0)
+		300:
 			if not _go:
 				_go = true
 				_gm._game_over("TOWER COLLAPSED!")
-	if _frame == 270:
+	if _frame == 350:
 		var img := root.get_texture().get_image()
 		img.save_png("user://shot.png")
 		print("[gameover_shot] saved")

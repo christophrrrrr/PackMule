@@ -19,9 +19,9 @@ const LEAF := Color(0.42, 0.80, 0.36)
 const TANGERINE := Color(1.0, 0.55, 0.21)
 
 const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   LMB PLACE   ·   TAB SPIN WHEEL   ·   ESC FREE CURSOR"
-const POSTCARD_SIZE := Vector2i(1024, 660)
+const POSTCARD_SIZE := Vector2i(1024, 686)  # photo area below is 16:9
 const PC_PAD := 22
-const PC_CAPTION_H := 96
+const PC_CAPTION_H := 88
 
 @onready var _crosshair: Label = $Crosshair
 @onready var _wheel: ModifierWheel = $WheelOverlay
@@ -316,7 +316,8 @@ func _build_postcard(image: Image, stats: Dictionary) -> void:
 		_pc_photo.position = Vector2(PC_PAD, PC_PAD)
 		_pc_photo.size = Vector2(POSTCARD_SIZE.x - 2 * PC_PAD, POSTCARD_SIZE.y - PC_PAD - PC_CAPTION_H)
 		_pc_photo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		_pc_photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		# FIT (not cover) so the whole framed shot shows — never crop a piece.
+		_pc_photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		_pc_photo.clip_contents = true
 		root.add_child(_pc_photo)
 

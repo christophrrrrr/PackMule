@@ -385,17 +385,26 @@ func _game_over(reason: String) -> void:
 	_hud.show_game_over(reason, stats, photo)
 
 
-## Frames the whole tower (donkey + everything stacked) in the camera and
-## returns a rendered image of it against the sky. Bounding-sphere framing
-## guarantees nothing is ever cut off.
+## Photographs the whole tower (donkey + everything stacked) side-on, as
+## close as possible while still fitting every piece in frame. Fitting the
+## actual extents (not a bounding sphere) keeps a tall tower large instead
+## of tiny; nothing is ever cut off.
 func _capture_tower_photo() -> Image:
 	if DisplayServer.get_name() == "headless":
 		return null  # no renderer in headless test runs
 	var aabb := _tower_world_aabb()
 	var center := aabb.get_center()
-	var radius := maxf(aabb.size.length() * 0.5, 1.5)
-	var dist := radius / sin(deg_to_rad(_camera.fov * 0.5)) * 1.12
-	var dir := Vector3(0.72, 0.42, 1.0).normalized()
+	var vp := get_viewport().get_visible_rect().size
+	var aspect := vp.x / vp.y
+	var v_half := deg_to_rad(_camera.fov * 0.5)        # vertical half-FOV
+	var h_half := atan(tan(v_half) * aspect)           # horizontal half-FOV
+	# Side-on profile of the mule, lifted a touch for a sense of depth.
+	var dir := Vector3(1.0, 0.12, 0.0).normalized()
+	# Distance that just fits the tower's height (vertical) and its widest
+	# horizontal spread (whichever needs the camera farther wins).
+	var dist_v := (aabb.size.y * 0.5) / tan(v_half)
+	var dist_h := (maxf(aabb.size.x, aabb.size.z) * 0.5) / tan(h_half)
+	var dist := maxf(dist_v, dist_h) * 1.06
 	_camera.global_position = center + dir * dist
 	_camera.look_at(center, Vector3.UP)
 	# Let the moved camera render before grabbing the frame.
