@@ -16,6 +16,7 @@ const SHOW_RESULT_TIME := 1.4
 var _rot := 0.0
 var _busy := false
 var _result_text := ""
+var _tick_seg := -1
 
 
 func _ready() -> void:
@@ -48,12 +49,18 @@ func spin() -> void:
 
 func _set_rot(value: float) -> void:
 	_rot = value
+	# Click once per segment that passes under the pointer.
+	var seg := int(value / (TAU / ModifierCatalog.ENTRIES.size()))
+	if seg != _tick_seg:
+		_tick_seg = seg
+		Sfx.play("tick", randf_range(0.95, 1.08))
 	queue_redraw()
 
 
 func _finish(idx: int) -> void:
 	var modifier: Dictionary = ModifierCatalog.ENTRIES[idx]
 	_result_text = "%s!" % modifier["name"]
+	Sfx.play("ding")
 	queue_redraw()
 	landed.emit(modifier)
 	get_tree().create_timer(SHOW_RESULT_TIME).timeout.connect(func() -> void:

@@ -42,6 +42,7 @@ var _menu: CenterContainer
 
 # Game-over panel.
 var _go_built := false
+var _go_panel: PanelContainer
 var _go_title: Label
 var _go_subtitle: Label
 var _pc_display: TextureRect
@@ -212,10 +213,23 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 	_pc_display.texture = _pc_vp.get_texture()
 	_saved_label.visible = false
 	_game_over.visible = true
+	_pop_in_panel()
+
+
+## A quick scale-in so the game-over panel lands with some bounce. Runs on
+## unscaled time because the scene is frozen (Engine.time_scale = 0).
+func _pop_in_panel() -> void:
+	await get_tree().process_frame  # let the panel get its size
+	_go_panel.pivot_offset = _go_panel.size / 2.0
+	_go_panel.scale = Vector2(0.85, 0.85)
+	var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.set_ignore_time_scale(true)
+	tw.tween_property(_go_panel, "scale", Vector2.ONE, 0.35)
 
 
 func _build_game_over_ui() -> void:
 	var panel := PanelContainer.new()
+	_go_panel = panel
 	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SUNNY))
 
 	var margin := MarginContainer.new()

@@ -12,6 +12,7 @@ const MAX_SPEED := 50.0
 const SPEED_STEP := 1.25
 const SPRINT_MULT := 2.5
 const MAX_PITCH := 1.45
+const SHAKE_DECAY := 6.0
 
 const START_POSITION := Vector3(8.0, 5.5, 11.0)
 const START_LOOK_AT := Vector3(0.0, 1.0, 0.0)
@@ -19,6 +20,7 @@ const START_LOOK_AT := Vector3(0.0, 1.0, 0.0)
 var _speed := 8.0
 var _yaw := 0.0
 var _pitch := 0.0
+var _shake := 0.0
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -64,7 +66,18 @@ func _process(delta: float) -> void:
 		dir += Vector3.UP
 	if Input.is_key_pressed(KEY_CTRL):
 		dir -= Vector3.UP
-	if dir == Vector3.ZERO:
-		return
-	var speed := _speed * (SPRINT_MULT if Input.is_key_pressed(KEY_SHIFT) else 1.0)
-	position += dir.normalized() * speed * delta
+	if dir != Vector3.ZERO:
+		var speed := _speed * (SPRINT_MULT if Input.is_key_pressed(KEY_SHIFT) else 1.0)
+		position += dir.normalized() * speed * delta
+	# Screen shake: jitter the camera, decaying back to centered.
+	if _shake > 0.001:
+		_camera.position = Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0),
+				randf_range(-1.0, 1.0)) * _shake
+		_shake = move_toward(_shake, 0.0, SHAKE_DECAY * _shake * delta + delta)
+	elif _camera.position != Vector3.ZERO:
+		_camera.position = Vector3.ZERO
+
+
+## Kick the camera; bigger amount = bigger jolt. Used for impacts/collapses.
+func shake(amount: float) -> void:
+	_shake = maxf(_shake, amount)

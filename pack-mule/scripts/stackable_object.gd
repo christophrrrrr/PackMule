@@ -41,6 +41,8 @@ var half_extents := Vector3.ONE * 0.5
 var no_glue := false             # Slippery: never locks in
 
 var _super_glue := false         # bonds instantly on first touch, unbreakable
+var _model: Node3D               # visual mesh root (scaled for the landing pop)
+var _model_scale := Vector3.ONE
 var _still_time := 0.0
 var _fall_time := 0.0
 var _speed_last_tick := 0.0
@@ -239,6 +241,7 @@ static func build_normalized_model(host: Node3D, path: String, target_size: floa
 		"half_extents": aabb.size * sf * 0.5,
 		"parts": parts,
 		"points": union,
+		"model": model,
 	}
 
 
@@ -292,6 +295,17 @@ func break_loose(force := false) -> void:
 	sleeping = false
 	for d in deps:
 		d.break_loose()
+
+
+## A quick squash-and-stretch on the visual mesh (collision is untouched),
+## for a satisfying "landed" pop. Bigger pieces pop a touch harder.
+func pop() -> void:
+	if _model == null:
+		return
+	var squash := Vector3(_model_scale.x * 1.16, _model_scale.y * 0.84, _model_scale.z * 1.16)
+	_model.scale = squash
+	var tw := create_tween().set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_model, "scale", _model_scale, 0.4)
 
 
 ## Called by the game manager when this body enters the kill zone.
@@ -398,6 +412,9 @@ func _on_body_entered(body: Node) -> void:
 func _build_model(path: String, target_size: float) -> void:
 	var built := build_normalized_model(self, path, target_size)
 	half_extents = built["half_extents"]
+	_model = built["model"]
+	if _model != null:
+		_model_scale = _model.scale
 	var union: PackedVector3Array = built["points"]
 	if union.is_empty():
 		return

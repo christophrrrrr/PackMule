@@ -68,6 +68,7 @@ var _started := false            # the run has begun (past the main menu)
 
 func _ready() -> void:
 	Engine.time_scale = 1.0       # a previous run froze the scene for its photo
+	add_child(Sfx.new())          # the procedural sound bank (Sfx.play(...))
 	_rng.randomize()
 	_setup_mountain()
 	_setup_donkey()
@@ -96,6 +97,7 @@ func _start_game() -> void:
 	_camera_rig.set_process(true)
 	_hud.hide_main_menu()
 	_hud.set_in_game_hud_visible(true)
+	Sfx.start_wind()
 	_refresh_hud()
 	_refresh_modifier_label()
 	_spawn_next()
@@ -271,12 +273,17 @@ func _place_object(entry: Dictionary, xform: Transform3D) -> void:
 	_hud.set_incoming("Settling...")
 
 
-## First settle of a placed object: score it and move the game along.
+## First settle of a placed object: score it, juice it, move the game along.
 func _on_object_settled(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER or obj.state != StackableObject.State.SETTLED:
 		return
 	_settled.append(obj)
 	_score += SCORE_PER_OBJECT
+	# Landing juice: a squash pop, a mass-pitched thunk, dust, and a kick.
+	obj.pop()
+	Sfx.play("thunk", clampf(remap(obj.mass, 5.0, 400.0, 1.5, 0.6), 0.55, 1.6))
+	_spawn_dust(obj.global_position - Vector3(0.0, obj.half_extents.y, 0.0), 10, 1.0)
+	_camera_rig.shake(clampf(obj.mass / 500.0, 0.04, 0.16))
 	if obj == _settling:
 		_settling = null
 	if _phase == Phase.SETTLING:
@@ -310,6 +317,10 @@ func _is_anchored(obj: StackableObject) -> bool:
 func _on_object_fell(obj: StackableObject) -> void:
 	if _phase == Phase.GAME_OVER:
 		return
+	# Falling juice (a tumble off the tower is dramatic).
+	Sfx.play("crash", randf_range(0.9, 1.1))
+	_spawn_dust(obj.global_position, 16, 1.4)
+	_camera_rig.shake(0.22)
 	_settled.erase(obj)
 	_strikes += 1
 	var now := Time.get_ticks_msec() / 1000.0
@@ -368,6 +379,8 @@ func _game_over(reason: String) -> void:
 	if _ghost != null:
 		_ghost.queue_free()
 		_ghost = null
+	Sfx.stop_wind()
+	Sfx.play("sting")
 	# Freeze the whole scene so the photo is crisp, then frame and shoot the
 	# tower before any UI is shown.
 	Engine.time_scale = 0.0
@@ -411,6 +424,46 @@ func _capture_tower_photo() -> Image:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	return get_viewport().get_texture().get_image()
+
+
+var _dust_mesh: SphereMesh
+var _dust_ramp: Gradient
+
+
+## A one-shot puff of dust at a world position, freed after it fades.
+func _spawn_dust(pos: Vector3, count: int, scale: float) -> void:
+	if _dust_mesh == null:
+		_dust_mesh = SphereMesh.new()
+		_dust_mesh.radius = 0.16
+		_dust_mesh.height = 0.32
+		_dust_mesh.radial_segments = 6
+		_dust_mesh.rings = 3
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.vertex_color_use_as_albedo = true
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_dust_mesh.material = mat
+		_dust_ramp = Gradient.new()
+		_dust_ramp.set_color(0, Color(0.92, 0.89, 0.83, 0.9))
+		_dust_ramp.set_color(1, Color(0.92, 0.89, 0.83, 0.0))
+	var p := CPUParticles3D.new()
+	p.mesh = _dust_mesh
+	p.one_shot = true
+	p.explosiveness = 0.95
+	p.amount = count
+	p.lifetime = 0.7
+	p.direction = Vector3.UP
+	p.spread = 75.0
+	p.initial_velocity_min = 1.2
+	p.initial_velocity_max = 3.2
+	p.gravity = Vector3(0.0, -5.0, 0.0)
+	p.scale_amount_min = 0.5 * scale
+	p.scale_amount_max = 1.3 * scale
+	p.color_ramp = _dust_ramp
+	add_child(p)
+	p.position = pos
+	p.emitting = true
+	get_tree().create_timer(1.4).timeout.connect(p.queue_free)
 
 
 ## World-space box around the donkey and every object still on the tower.

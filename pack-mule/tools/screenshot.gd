@@ -16,8 +16,17 @@ func _init() -> void:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
-	if _frames == 6 and "play" in OS.get_cmdline_user_args():
+	if _frames == 6 and ("play" in OS.get_cmdline_user_args() or "dust" in OS.get_cmdline_user_args()):
 		(root.get_node("Main") as GameManager)._start_game()
+	if _frames == 14 and "dust" in OS.get_cmdline_user_args():
+		var gm := root.get_node("Main") as GameManager
+		gm.set_physics_process(false)
+		gm._spawn_dust(Vector3(0, gm._base_top + 1.5, 0), 40, 2.5)
+	if "dust" in OS.get_cmdline_user_args() and _frames == 20:
+		var img := root.get_viewport().get_texture().get_image()
+		img.save_png("user://shot.png")
+		print("[shot] saved dust")
+		quit(0)
 	if _frames == 30 and _spin_wheel:
 		(root.get_node("Main/HUD") as GameHud).spin_wheel()
 	if _frames == 10 and "side" in OS.get_cmdline_user_args():
