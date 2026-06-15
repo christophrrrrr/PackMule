@@ -31,7 +31,7 @@ func _process(_dt: float) -> bool:
 
 	# Snapshot the real save so the test leaves no trace.
 	var ids: Array[String] = []
-	for group: Array in [ShopCatalog.PERKS, ShopCatalog.BOOSTS, ShopCatalog.SKINS, ShopCatalog.MOUNTS]:
+	for group: Array in [ShopCatalog.SKINS, ShopCatalog.MOUNTS]:
 		for item: Dictionary in group:
 			ids.append(item["id"])
 	var w0 := GameSettings.get_wallet()
@@ -56,9 +56,9 @@ func _process(_dt: float) -> bool:
 	# Ownership and skins.
 	_check("default skin owned", GameSettings.owns(ShopCatalog.DEFAULT_SKIN))
 	_check("default skin equipped", GameSettings.get_skin() == ShopCatalog.DEFAULT_SKIN)
-	_check("perk not owned yet", not GameSettings.owns("head_start"))
-	GameSettings.buy("head_start")
-	_check("buy grants ownership", GameSettings.owns("head_start"))
+	_check("skin not owned yet", not GameSettings.owns("skin_blue"))
+	GameSettings.buy("skin_blue")
+	_check("buy grants ownership", GameSettings.owns("skin_blue"))
 	GameSettings.set_skin("skin_blue")
 	_check("equip changes skin", GameSettings.get_skin() == "skin_blue")
 
@@ -70,26 +70,6 @@ func _process(_dt: float) -> bool:
 	GameSettings.set_base("base_horse")
 	_check("buy + equip mount", GameSettings.owns("base_horse") and GameSettings.get_base() == "base_horse")
 	_check("mount path resolves", ShopCatalog.base_path("base_horse") == "res://assets/Horse.glb")
-
-	# Perks resolved at run start.
-	GameSettings.buy("reinforced")
-	GameSettings.buy("exotic")
-	GameSettings.buy("safety_rope")
-	_gm._start_game()
-	_check("head start raises base streak", _gm._base_streak() == 1)
-	_check("head start starts at x1.5", is_equal_approx(_gm._multiplier, 1.5))
-	_check("reinforced raises strike cap",
-			_gm._strikes_cap == GameManager.STRIKES_TO_LOSE + 1)
-	_check("reinforced raises collapse cap",
-			_gm._collapse_cap == GameManager.COLLAPSE_COUNT + 1)
-	_check("exotic boost active", _gm._exotic_boost)
-
-	# Safety Rope: a one-time save that forfeits the pending pot.
-	_gm._safety_used = false
-	_gm._pending = 999
-	_check("safety fires once", _gm._try_safety())
-	_check("safety clears pending", _gm._pending == 0)
-	_check("safety only once per run", not _gm._try_safety())
 
 	# Restore the real save exactly as it was.
 	GameSettings.reset_shop()

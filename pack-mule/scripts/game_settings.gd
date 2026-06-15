@@ -297,6 +297,29 @@ static func set_base(id: String) -> void:
 	_inst._save()
 
 
+# --- Daily challenge ---------------------------------------------------------
+
+## True if today's challenge has already been completed.
+static func daily_done() -> bool:
+	if _inst == null:
+		return false
+	return int(_inst._cfg.get_value("daily", "done_day", -1)) == DailyChallenge.absolute_day()
+
+
+static func set_daily_done() -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("daily", "done_day", DailyChallenge.absolute_day())
+	_inst._save()
+
+
+## Clears the daily-challenge record (used by tests to restore a clean slate).
+static func reset_daily() -> void:
+	if _inst != null and _inst._cfg.has_section("daily"):
+		_inst._cfg.erase_section("daily")
+		_inst._save()
+
+
 ## Wipes all shop progress (wallet, unlocks, equipped skin). Used by tests
 ## to restore a clean slate; also a hook for a future "reset progress".
 static func reset_shop() -> void:

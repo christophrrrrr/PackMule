@@ -1,25 +1,9 @@
 class_name ShopCatalog
 
 ## The between-run shop. Cash banked across runs accumulates in a wallet
-## (GameSettings) that is spent here on permanent perks, a spawn booster, and
-## saddle skins. Item ids are stored via GameSettings.owns/buy and read by the
-## game manager at the start of each run (perks) or live (the equipped skin).
-
-const PERKS := [
-	{"id": "head_start", "name": "Head Start", "price": 500,
-		"desc": "Start each climb at a x1.5 multiplier - even right after cashing out."},
-	{"id": "reinforced", "name": "Reinforced Nerves", "price": 900,
-		"desc": "Shrug off one extra fallen object before the run ends."},
-	{"id": "wide_saddle", "name": "Wide Saddle", "price": 700,
-		"desc": "A roomier platform on the mule's back - an easier base to build on."},
-	{"id": "safety_rope", "name": "Safety Rope", "price": 1500,
-		"desc": "Survive your first collapse each run: the pending pot is lost, but you keep climbing."},
-]
-
-const BOOSTS := [
-	{"id": "exotic", "name": "Exotic Crate", "price": 1000,
-		"desc": "The wildest cargo (T-Rex, UFO, chopper, bear...) turns up far more often."},
-]
+## (GameSettings) that is spent here on mounts (the base you stack on) and
+## saddle skins. Item ids are stored via GameSettings.owns/buy and read by
+## the game manager live (the equipped skin / mount).
 
 const SKINS := [
 	{"id": "skin_red", "name": "Classic Red", "price": 0},
@@ -49,17 +33,12 @@ const MOUNTS := [
 ]
 
 const DEFAULT_BASE := "base_donkey"
-
-## Objects the Exotic Crate makes more common, and the weight multiplier.
-const EXOTIC_NAMES := ["T-Rex", "Helicopter", "Flying Saucer", "Alien", "Bear", "Cow"]
-const EXOTIC_MULT := 4.0
-
 const DEFAULT_SKIN := "skin_red"
 
 
 ## The price of any item by id (0 if unknown / free).
 static func price(id: String) -> int:
-	for group: Array in [PERKS, BOOSTS, SKINS, MOUNTS]:
+	for group: Array in [SKINS, MOUNTS]:
 		for item: Dictionary in group:
 			if item["id"] == id:
 				return int(item["price"])

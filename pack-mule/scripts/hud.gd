@@ -66,6 +66,7 @@ var _credits: CenterContainer
 var _credits_scroll: Control           # the moving credits roll
 var _credits_y := 0.0
 var _menu_best: Label                   # the menu's best-height / wallet line
+var _menu_daily: Label                  # the menu's daily-challenge line
 var _shop: CenterContainer
 var _shop_tabs: HBoxContainer           # category tab buttons
 var _shop_body: VBoxContainer           # the rebuilt item rows for the active tab
@@ -338,6 +339,7 @@ func show_main_menu() -> void:
 		_build_side_buttons()
 	set_in_game_hud_visible(false)
 	_menu_best.text = _menu_best_text()  # wallet may have grown since last shown
+	refresh_daily()
 	_menu.visible = true
 	_side.visible = true
 	Sfx.start_music()
@@ -346,6 +348,24 @@ func show_main_menu() -> void:
 func _menu_best_text() -> String:
 	return "BEST  %.1f M   ·   WALLET  $%s" % [
 			GameSettings.get_record(), _money_str(GameSettings.get_wallet())]
+
+
+## Updates the menu's daily-challenge line (text + done/not-done color).
+func refresh_daily() -> void:
+	if _menu_daily == null:
+		return
+	var c := DailyChallenge.today()
+	if GameSettings.daily_done():
+		_menu_daily.text = "DAILY DONE!   %s" % c["text"]
+		_menu_daily.add_theme_color_override("font_color", LEAF)
+	else:
+		_menu_daily.text = "TODAY'S CHALLENGE:   %s" % c["text"]
+		_menu_daily.add_theme_color_override("font_color", SKY)
+
+
+## Hide the game-over panel (used by the in-place restart).
+func hide_game_over() -> void:
+	_game_over.visible = false
 
 
 func hide_main_menu() -> void:
@@ -382,6 +402,11 @@ func _build_main_menu() -> void:
 	_menu_best = _make_label(_menu_best_text(), 26, SUNNY)
 	_menu_best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_menu_best)
+
+	_menu_daily = _make_label("", 20, SKY)
+	_menu_daily.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_menu_daily)
+	refresh_daily()
 
 	box.add_child(_divider())
 
@@ -753,7 +778,7 @@ func _model_thumb(path: String) -> Control:
 	vp.size = Vector2i(128, 128)
 	vp.transparent_bg = true
 	vp.own_world_3d = true
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE  # static preview
 	holder.add_child(vp)
 
 	var sun := DirectionalLight3D.new()

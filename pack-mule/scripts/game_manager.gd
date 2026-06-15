@@ -74,14 +74,12 @@ var _event_milestone := 0        # highest 10 m mark that has fired an event
 var _record := 0.0               # best height ever (loaded from settings)
 var _beat_record := false        # this run has already surpassed the record
 
-# Shop perks, resolved at the start of each run.
-var _strikes_cap := STRIKES_TO_LOSE
-var _collapse_cap := COLLAPSE_COUNT
-var _safety_used := false         # Safety Rope already spent this run
-var _exotic_boost := false        # Exotic Crate: rare cargo shows up more
+# Per-run peaks for the daily challenge (highest multiplier, cash-outs made).
+var _max_mult := 1.0
+var _cashout_count := 0
 
 # Saddle geometry, captured in _setup_donkey so the platform can be rebuilt
-# when a skin is equipped or the Wide Saddle perk changes its width.
+# when a skin or mount is equipped.
 var _saddle_nodes: Array[Node] = []
 var _saddle_along_x := true
 var _saddle_base_w := 1.0
@@ -110,6 +108,7 @@ func _ready() -> void:
 	_hud.wheel_landed.connect(_on_wheel_landed)
 	_hud.skin_changed.connect(_apply_saddle)  # live recolor on the menu
 	_hud.base_changed.connect(_rebuild_base)  # live mount swap on the menu
+	_warm_assets()                # preload object meshes so play has no hitch
 	if _autostart:
 		_autostart = false
 		_start_game()
@@ -130,19 +129,7 @@ func _start_game() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_camera_rig.reset_flight()      # every run starts at the same fly speed
 	_camera_rig.set_process(true)
-	_record = GameSettings.get_record()
-	_event_milestone = 0
-	_beat_record = false
-	_banked = 0
-	_pending = 0
-	# Apply purchased perks for this run.
-	_strikes_cap = STRIKES_TO_LOSE + (1 if GameSettings.owns("reinforced") else 0)
-	_collapse_cap = COLLAPSE_COUNT + (1 if GameSettings.owns("reinforced") else 0)
-	_safety_used = false
-	_exotic_boost = GameSettings.owns("exotic")
-	_apply_saddle()               # picks up the Wide Saddle perk + equipped skin
-	_streak = _base_streak()
-	_multiplier = _streak_multiplier(_streak)
+	_reset_run_state()
 	_hud.hide_main_menu()
 	_hud.set_in_game_hud_visible(true)
 	_hud.set_in_run(true)
@@ -151,6 +138,31 @@ func _start_game() -> void:
 	_refresh_hud()
 	_refresh_modifier_label()
 	_spawn_next()
+
+
+## Zeroes every per-run value so a run can begin — used by both the first
+## Play and the in-place restart.
+func _reset_run_state() -> void:
+	_record = GameSettings.get_record()
+	_event_milestone = 0
+	_beat_record = false
+	_banked = 0
+	_pending = 0
+	_streak = 0
+	_multiplier = 1.0
+	_strikes = 0
+	_placed_count = 0
+	_total_weight = 0.0
+	_max_height = 0.0
+	_tower_top = _base_top
+	_max_mult = 1.0
+	_cashout_count = 0
+	_settled.clear()
+	_fall_times.clear()
+	_unrooted_last.clear()
+	_settling = null
+	_pending_mod = {}
+	_pending_golden = false
 
 
 func _to_main_menu() -> void:
@@ -179,9 +191,23 @@ func _photo_to_pause() -> void:
 	_camera_rig.process_mode = Node.PROCESS_MODE_PAUSABLE
 
 
+## Restart WITHOUT reloading the scene: the world (mountain, mount, clouds,
+## peaks) is reused, so there is no rebuild hitch. Just clear the old tower
+## and begin a fresh run.
 func _on_restart() -> void:
-	_autostart = true
-	get_tree().reload_current_scene()
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	for c in get_children():
+		if c is StackableObject:
+			c.free()
+	if _ghost != null:
+		_ghost.free()
+		_ghost = null
+	_hud.hide_game_over()
+	_camera_rig.reset_view()
+	_camera_rig.set_physics_process(true)
+	_started = false
+	_start_game()
 
 
 func _process(delta: float) -> void:
@@ -366,8 +392,6 @@ func _weighted_pick() -> int:
 	var weights: Array[float] = []
 	for i in ObjectCatalog.ENTRIES.size():
 		var w: float = GameSettings.get_weight(ObjectCatalog.ENTRIES[i]["name"])
-		if _exotic_boost and ObjectCatalog.ENTRIES[i]["name"] in ShopCatalog.EXOTIC_NAMES:
-			w *= ShopCatalog.EXOTIC_MULT
 		if i == _last_index:
 			w *= 0.0001  # all but eliminate an immediate repeat
 		weights.append(w)
@@ -427,10 +451,12 @@ func _on_object_settled(obj: StackableObject) -> void:
 	_pending += int(round(SCORE_PER_OBJECT * _multiplier))
 	_streak += 1
 	_multiplier = _streak_multiplier(_streak)
+	_max_mult = maxf(_max_mult, _multiplier)
 	# A rising coin blip — the climb should feel rewarding.
 	Sfx.play_at("coin", obj.global_position,
 			clampf(1.0 + _streak * 0.05, 1.0, 2.2), -9.0)
 	_refresh_hud()
+	_check_daily()
 	# Settling itself stays clean — the satisfying feedback fired at placement.
 	if obj == _settling:
 		_settling = null
@@ -447,31 +473,6 @@ func _streak_multiplier(streak: int) -> float:
 		var pair := (step + 1) / 2  # steps 1-2 -> 1, 3-4 -> 2, 5-6 -> 3, ...
 		m += 0.5 if pair == 1 else float(pair - 1)
 	return m
-
-
-## The streak the multiplier resets to: 1 (a x1.5 start) with the Head Start
-## perk, otherwise 0 (a x1 start). Used at run start and after each cash out.
-func _base_streak() -> int:
-	return 1 if GameSettings.owns("head_start") else 0
-
-
-## Safety Rope perk: the first run-ending collapse each run is survived. The
-## pending pot is forfeit and the multiplier resets, but the run continues.
-## Returns true if it fired (so the caller skips game over).
-func _try_safety() -> bool:
-	if _safety_used or not GameSettings.owns("safety_rope"):
-		return false
-	_safety_used = true
-	_fall_times.clear()
-	_strikes = 0
-	_pending = 0
-	_streak = _base_streak()
-	_multiplier = _streak_multiplier(_streak)
-	Sfx.play("ding")
-	_hud.toast("SAFETY ROPE!  Run saved.", Color(0.42, 0.80, 0.36))
-	_hud.set_pending(_pending, _multiplier)
-	_refresh_hud()
-	return true
 
 
 ## Every settle (including pieces that re-settle after glue broke): glue
@@ -513,11 +514,10 @@ func _on_object_fell(obj: StackableObject) -> void:
 		_fall_times.remove_at(0)
 	_recompute_tower_top()
 	_refresh_hud()
-	if _fall_times.size() >= _collapse_cap or _strikes >= _strikes_cap:
-		if not _try_safety():
-			_game_over("TOWER COLLAPSED!" if _fall_times.size() >= _collapse_cap \
-					else "TOO MANY FALLEN OBJECTS")
-			return
+	if _fall_times.size() >= COLLAPSE_COUNT or _strikes >= STRIKES_TO_LOSE:
+		_game_over("TOWER COLLAPSED!" if _fall_times.size() >= COLLAPSE_COUNT \
+				else "TOO MANY FALLEN OBJECTS")
+		return
 	if obj == _settling:
 		_settling = null
 		_spawn_next()
@@ -706,6 +706,36 @@ func _refresh_hud() -> void:
 	_hud.set_strikes(_strikes, STRIKES_TO_LOSE)
 
 
+## Background-load every object mesh once so the first placement of a run
+## doesn't hitch on a disk read. The results just warm the resource cache.
+func _warm_assets() -> void:
+	for entry: Dictionary in ObjectCatalog.ENTRIES:
+		ResourceLoader.load_threaded_request(entry["path"])
+
+
+## This run's stats, keyed by the daily-challenge metrics.
+func _run_stats() -> Dictionary:
+	return {
+		"height": _max_height,
+		"objects": float(_placed_count),
+		"banked": float(_banked),
+		"weight": _total_weight,
+		"multiplier": _max_mult,
+		"cashouts": float(_cashout_count),
+	}
+
+
+## Completes today's daily challenge the instant this run's stats meet it.
+func _check_daily() -> void:
+	if GameSettings.daily_done():
+		return
+	if DailyChallenge.is_met(DailyChallenge.today(), _run_stats()):
+		GameSettings.set_daily_done()
+		Sfx.play("register")
+		Sfx.play("ding")
+		_hud.toast("DAILY CHALLENGE DONE!", Color(1.0, 0.83, 0.22))
+
+
 ## Cash out: bank the pending pot into your safe money and reset the
 ## multiplier to ×1 — the run keeps going. Always available mid-run.
 func _cash_out() -> void:
@@ -716,12 +746,14 @@ func _cash_out() -> void:
 	var amount := _pending
 	_banked += amount
 	_pending = 0
-	_streak = _base_streak()
-	_multiplier = _streak_multiplier(_streak)
+	_streak = 0
+	_multiplier = 1.0
+	_cashout_count += 1
 	Sfx.play("register")
 	Sfx.play("coin")
 	_hud.bank_flourish(_banked, amount)
 	_hud.set_pending(_pending, _multiplier)
+	_check_daily()
 
 
 func _refresh_modifier_label() -> void:
@@ -1178,13 +1210,13 @@ func _rebuild_base() -> void:
 
 
 ## Builds (or rebuilds) the saddle platform — collision plus the colored
-## blanket — from the captured geometry, the equipped skin, and the Wide
-## Saddle perk. Cheap, so it can run on a skin change or at run start.
+## blanket — from the captured geometry and the equipped skin. Cheap, so it
+## can run on a skin/mount change.
 func _apply_saddle() -> void:
 	for n in _saddle_nodes:
 		n.free()
 	_saddle_nodes.clear()
-	var width := _saddle_base_w * (1.3 if GameSettings.owns("wide_saddle") else 1.0)
+	var width := _saddle_base_w
 	# Bottom sinks 2 cm into the fur so there is no visible gap.
 	var saddle_size := Vector3(_saddle_l, 0.12, width) if _saddle_along_x \
 			else Vector3(width, 0.12, _saddle_l)

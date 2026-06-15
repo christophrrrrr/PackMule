@@ -130,6 +130,16 @@ func reset_flight() -> void:
 	_shake = 0.0
 
 
+## Snap the camera back to its opening pose (used by the in-place restart).
+func reset_view() -> void:
+	position = START_POSITION
+	look_at(START_LOOK_AT)
+	_yaw = rotation.y
+	_pitch = rotation.x
+	_camera.position = Vector3.ZERO
+	reset_flight()
+
+
 ## Kick the camera; bigger amount = bigger jolt. Used for impacts/collapses.
 func shake(amount: float) -> void:
 	_shake = maxf(_shake, amount)
