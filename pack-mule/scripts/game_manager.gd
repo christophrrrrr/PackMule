@@ -100,8 +100,8 @@ func _ready() -> void:
 	_setup_mountain()
 	_setup_donkey()
 	_kill_zone.body_entered.connect(_on_kill_zone_body_entered)
-	_hud.restart_requested.connect(_on_restart)
-	_hud.start_requested.connect(_start_game)
+	_hud.restart_requested.connect(_on_restart_pressed)
+	_hud.start_requested.connect(_on_play_pressed)
 	_hud.to_main_menu_requested.connect(_to_main_menu)
 	_hud.photo_enter_requested.connect(_enter_photo_mode)
 	_hud.photo_to_pause_requested.connect(_photo_to_pause)
@@ -119,6 +119,14 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_camera_rig.set_process(false)
 		_hud.show_main_menu()
+
+
+## PLAY button: fade to black, begin the run, fade back in. (_start_game stays
+## synchronous so the test tools can call it directly.)
+func _on_play_pressed() -> void:
+	await _hud.fade_out()
+	_start_game()
+	_hud.fade_in()
 
 
 ## Leaves the menu and begins a run: hand control to the fly camera, show
@@ -167,6 +175,7 @@ func _reset_run_state() -> void:
 
 
 func _to_main_menu() -> void:
+	await _hud.fade_out()  # cover the scene rebuild (the one real hitch)
 	get_tree().paused = false
 	Engine.time_scale = 1.0
 	_autostart = false
@@ -190,6 +199,14 @@ func _enter_photo_mode() -> void:
 ## Photo mode -> pause menu (camera freezes again; HUD shows the menu).
 func _photo_to_pause() -> void:
 	_camera_rig.process_mode = Node.PROCESS_MODE_PAUSABLE
+
+
+## Stack Again button: fade out, restart in place, fade in. (_on_restart stays
+## synchronous so the test tools can call it directly.)
+func _on_restart_pressed() -> void:
+	await _hud.fade_out()
+	_on_restart()
+	_hud.fade_in()
 
 
 ## Restart WITHOUT reloading the scene: the world (mountain, mount, clouds,

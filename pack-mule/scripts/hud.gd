@@ -85,6 +85,7 @@ var _paused := false
 var _odds: CenterContainer
 var _odds_pct := {}               # entry name -> percent Label
 var _flash: ColorRect
+var _fade: ColorRect                    # black curtain for scene transitions
 var _record_banner: Label
 var _photo := false
 var _photo_hint: Label
@@ -113,6 +114,42 @@ func _ready() -> void:
 	_wheel.landed.connect(func(modifier: Dictionary) -> void: wheel_landed.emit(modifier))
 	_build_in_game_hud()
 	_build_overlays()
+	_build_fade()
+	fade_in()  # every scene starts black and fades in (hides reload hitches)
+
+
+# --- Scene transition (fade to/from black) ----------------------------------
+
+## A black curtain on top of everything, used to smooth scene reloads and
+## state switches. Starts opaque so the first frame fades in from black.
+func _build_fade() -> void:
+	_fade = ColorRect.new()
+	_fade.color = Color(0, 0, 0, 1)
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade.z_index = RenderingServer.CANVAS_ITEM_Z_MAX  # above all HUD/menus
+	add_child(_fade)
+
+
+## Reveal the scene (transparent). Non-blocking.
+func fade_in() -> void:
+	if _fade == null:
+		return
+	_fade.color.a = 1.0
+	var tw := create_tween()  # bound to the HUD (PROCESS_MODE_ALWAYS), so it
+	tw.set_ignore_time_scale(true)  # runs even while paused / time-frozen
+	tw.tween_property(_fade, "color:a", 0.0, 0.3)
+
+
+## Cover the screen with black. Await this before reloading/switching.
+func fade_out() -> void:
+	if _fade == null:
+		return
+	_fade.color.a = 0.0
+	var tw := create_tween()
+	tw.set_ignore_time_scale(true)
+	tw.tween_property(_fade, "color:a", 1.0, 0.3)
+	await tw.finished
 
 
 ## Full-screen lightning flash + the big record banner (both hidden).
