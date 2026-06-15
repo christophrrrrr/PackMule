@@ -1272,6 +1272,13 @@ func _build_pause() -> void:
 	resume.custom_minimum_size = Vector2(360, 0)
 	resume.pressed.connect(_resume)
 	box.add_child(resume)
+	var restart := _make_button("RESTART", Color(0.95, 0.45, 0.4))
+	restart.custom_minimum_size = Vector2(360, 0)
+	restart.pressed.connect(func() -> void:
+		_paused = false
+		_pause.visible = false
+		restart_requested.emit())
+	box.add_child(restart)
 	var photo := _make_button("PHOTO MODE", SKY)
 	photo.custom_minimum_size = Vector2(360, 0)
 	photo.pressed.connect(start_photo_mode)

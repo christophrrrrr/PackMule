@@ -11,7 +11,7 @@ const MIN_SPEED := 2.0
 const MAX_SPEED := 50.0
 const SPEED_STEP := 1.25
 const SPRINT_MULT := 2.5
-const MAX_PITCH := 1.45
+const MAX_PITCH := 1.55  # ~89° — look (almost) straight down/up, no dead cone
 const SHAKE_DECAY := 6.0
 
 const START_POSITION := Vector3(8.0, 5.5, 11.0)
