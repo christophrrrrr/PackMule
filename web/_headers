@@ -1,0 +1,7 @@
+# Godot 4 web exports use SharedArrayBuffer (threads), which browsers only
+# allow when the page is "cross-origin isolated". These two headers turn that
+# on. Netlify and Cloudflare Pages both read this _headers file; it must sit
+# in the root of the deployed folder (next to index.html).
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
