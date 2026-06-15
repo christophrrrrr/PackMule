@@ -33,15 +33,30 @@ helper files into `web/`. The `web/_headers` file is already there — leave it.
 
 ## 3. Put it on Netlify
 
-1. Go to <https://app.netlify.com> and sign up (free — you can log in with
-   GitHub).
-2. **Add new site → Deploy manually.**
-3. Drag the whole **`web/` folder** onto the upload box.
-4. It deploys and gives you a URL like `random-name-1234.netlify.app`.
-5. **Site configuration → Change site name** → `packmule` → your link is now
-   **`packmule.netlify.app`**.
+### Option A — connect the GitHub repo (recommended)
 
-Open it on your phone and desktop to confirm it runs.
+This is the usual "connect repo and it deploys" flow. The catch with Godot:
+**Netlify can't run the Godot export**, so there's no build step — you commit
+the already‑exported files and Netlify just serves them. The included
+`netlify.toml` already sets this up (`publish = "web"`, empty build command).
+
+1. Commit the exported build: `git add web && git commit -m "web build" && git push`.
+2. On <https://app.netlify.com>: **Add new site → Import an existing project →**
+   pick the repo. It reads `netlify.toml`, so leave the build settings as‑is.
+3. Deploy. Rename the site (**Site configuration → Change site name** →
+   `packmule`) → **`packmule.netlify.app`**.
+4. **To update:** re‑export into `web/`, commit, push — Netlify redeploys.
+
+> Yes, this commits the `.wasm`/`.pck` (~tens of MB) to the repo. That's normal
+> for this no‑build approach and well under GitHub's limits.
+
+### Option B — drag and drop (no git)
+
+1. <https://app.netlify.com> → **Add new site → Deploy manually.**
+2. Drag the whole **`web/` folder** onto the upload box.
+3. Rename the site as above. To update, drag the folder again.
+
+Open the link on desktop and phone to confirm it runs.
 
 ## 4. (Optional) Custom domain — the most portfolio-friendly
 

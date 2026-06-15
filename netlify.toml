@@ -1,0 +1,9 @@
+# Netlify deploy config for the Godot web build.
+#
+# Godot can't export on Netlify's build servers, so there is NO build step:
+# you export the web build locally into /web, commit it, and Netlify just
+# serves that folder. Every push redeploys. (The COOP/COEP headers Godot 4
+# needs live in web/_headers.)
+[build]
+  publish = "web"
+  command = ""
