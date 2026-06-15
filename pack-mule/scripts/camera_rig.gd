@@ -136,7 +136,12 @@ func reset_view() -> void:
 	_pitch = asin(clampf(dir.y, -1.0, 1.0))
 	_yaw = atan2(-dir.x, -dir.z)
 	rotation = Vector3(_pitch, _yaw, 0.0)
+	# The game-over postcard reframes the tower with _camera.look_at(), which
+	# rotates the Camera3D child. The in-place restart reused this rig, so that
+	# leftover tilt made the view come back flipped and "forward" point wrong.
+	# Reset the child fully — it only ever carries the shake offset otherwise.
 	_camera.position = Vector3.ZERO
+	_camera.rotation = Vector3.ZERO
 	reset_flight()
 
 

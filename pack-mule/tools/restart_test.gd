@@ -34,8 +34,16 @@ func _process(_dt: float) -> bool:
 	_gm._placed_count = 7
 	var dummy := StackableObject.create(ObjectCatalog.ENTRIES[0])
 	_gm.add_child(dummy)
+	# Simulate the game-over postcard having rotated/moved the camera child.
+	_gm._camera.rotation = Vector3(0.5, 1.2, 0.3)
+	_gm._camera.position = Vector3(3.0, 2.0, 1.0)
 
 	_gm._on_restart()
+
+	_check("restart clears camera-child tilt",
+			_gm._camera.rotation.is_equal_approx(Vector3.ZERO))
+	_check("restart recenters camera child",
+			_gm._camera.position.is_equal_approx(Vector3.ZERO))
 
 	_check("restart returns to AIMING", _gm._phase == GameManager.Phase.AIMING)
 	_check("restart clears banked", _gm._banked == 0)

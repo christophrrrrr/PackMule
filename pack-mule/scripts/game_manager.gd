@@ -514,6 +514,12 @@ func _on_object_fell(obj: StackableObject) -> void:
 	_spawn_dust(obj.global_position, 16, 1.4)
 	_camera_rig.shake(0.22)
 	_settled.erase(obj)
+	# It keeps tumbling for the visual, but it's off the tower now — free it
+	# shortly so dead pieces don't keep falling (and simulating) forever. That
+	# unbounded pile of active bodies was the lag that grew as you played.
+	get_tree().create_timer(3.0).timeout.connect(func() -> void:
+		if is_instance_valid(obj):
+			obj.queue_free())
 	_strikes += 1
 	var now := Time.get_ticks_msec() / 1000.0
 	_fall_times.append(now)

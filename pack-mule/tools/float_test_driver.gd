@@ -42,12 +42,10 @@ func _entry(entry_name: String) -> Dictionary:
 
 
 func _finish() -> void:
-	print("[floattest] safe: state=%d pos=%s  tub: state=%d pos=%s" % [
-			_safe.state, _safe.global_position, _tub.state, _tub.global_position])
 	_check("floating piece was broken loose by the sweep", _saw_unfloat)
 	var space: PhysicsDirectSpaceState3D = _gm.get_world_3d().direct_space_state
 	for obj: StackableObject in _gm._settled:
-		if obj.state == StackableObject.State.SETTLED:
+		if is_instance_valid(obj) and obj.state == StackableObject.State.SETTLED:
 			_check("%s is touching something" % obj.display_name,
 					not obj.touching_bodies(space).is_empty())
 	print("[floattest] done: %d failure(s), strikes=%d" % [_fails, _gm._strikes])
@@ -63,7 +61,7 @@ func _process(delta: float) -> void:
 	# From the moment the Safe is knocked loose (stage 3+), any tub
 	# unfreeze is the sweep doing its job — the support edges are severed,
 	# so nothing else can wake it.
-	if _stage >= 3 and _tub != null \
+	if _stage >= 3 and is_instance_valid(_tub) \
 			and _tub.state != StackableObject.State.SETTLED:
 		_saw_unfloat = true
 	match _stage:
