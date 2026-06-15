@@ -22,6 +22,7 @@ var _voices3d: Array[AudioStreamPlayer3D] = []     # positional: impacts
 var _next := 0
 var _next3d := 0
 var _wind: AudioStreamPlayer
+var _music: AudioStreamPlayer
 var _enabled := true
 
 
@@ -72,13 +73,24 @@ func _ready() -> void:
 	_wind.bus = "Ambience"
 	add_child(_wind)
 
+	# Lobby music — plays on the menus only (not during a run).
+	_music = AudioStreamPlayer.new()
+	_music.stream = _file_or("lobbymusic", null)
+	if _music.stream is AudioStreamMP3:
+		(_music.stream as AudioStreamMP3).loop = true
+	elif _music.stream is AudioStreamOggVorbis:
+		(_music.stream as AudioStreamOggVorbis).loop = true
+	_music.volume_db = -8.0
+	_music.bus = "Ambience"
+	add_child(_music)
+
 
 ## Returns a real sound file from res://assets/sfx/ if present, else the
 ## supplied synthesized fallback. Lets the user drop in proper SFX without
 ## any code change.
 func _file_or(name: String, fallback: AudioStream) -> AudioStream:
 	for dir: String in ["res://assets/", "res://assets/sfx/"]:
-		for ext: String in [".ogg", ".wav"]:
+		for ext: String in [".ogg", ".wav", ".mp3"]:
 			var path := dir + name + ext
 			if ResourceLoader.exists(path):
 				return load(path)
@@ -106,6 +118,17 @@ static func start_wind() -> void:
 static func stop_wind() -> void:
 	if _inst != null:
 		_inst._wind.stop()
+
+
+## Lobby music — only on the menus; stopped while a run is in progress.
+static func start_music() -> void:
+	if _inst != null and _inst._enabled and _inst._music.stream != null and not _inst._music.playing:
+		_inst._music.play()
+
+
+static func stop_music() -> void:
+	if _inst != null:
+		_inst._music.stop()
 
 
 func _play(name: String, pitch: float, volume_db: float) -> void:

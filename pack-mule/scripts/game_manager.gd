@@ -121,6 +121,7 @@ func _start_game() -> void:
 	_hud.hide_main_menu()
 	_hud.set_in_game_hud_visible(true)
 	_hud.set_in_run(true)
+	Sfx.stop_music()              # lobby music only — silence (just wind) in-game
 	Sfx.start_wind()
 	_refresh_hud()
 	_refresh_modifier_label()

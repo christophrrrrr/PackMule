@@ -46,6 +46,10 @@ func _process(_delta: float) -> bool:
 					paused, h._pause != null and h._pause.visible, h._photo])
 	if _frames == 8 and "odds" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_odds()
+	if _frames == 8 and "howto" in OS.get_cmdline_user_args():
+		(root.get_node("Main/HUD") as GameHud)._open_howto()
+	if _frames == 8 and "credits" in OS.get_cmdline_user_args():
+		(root.get_node("Main/HUD") as GameHud)._open_credits()
 	if _frames == 8 and "settings" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_settings()
 	if _frames == 8 and "galleryview" in OS.get_cmdline_user_args():

@@ -28,6 +28,7 @@ const PC_PAD := 22
 const PC_CAPTION_H := 88
 const GALLERY_DIR := "user://gallery"
 const GALLERY_MAX := 20
+const CREDITS_CLIP_H := 456.0
 
 @onready var _crosshair: Label = $Crosshair
 @onready var _wheel: ModifierWheel = $WheelOverlay
@@ -57,6 +58,11 @@ var _gallery_index := 0
 var _settings: CenterContainer
 var _settings_return: CenterContainer  # panel to show when leaving settings
 var _odds_return: CenterContainer      # panel to show when leaving odds
+var _side: VBoxContainer                # corner How-to / Credits buttons
+var _howto: CenterContainer
+var _credits: CenterContainer
+var _credits_scroll: Control           # the moving credits roll
+var _credits_y := 0.0
 var _listening := ""              # action currently waiting for a new key
 var _listening_btn: Button
 var _bind_buttons := {}
@@ -305,19 +311,19 @@ func set_in_game_hud_visible(shown: bool) -> void:
 func show_main_menu() -> void:
 	if _menu == null:
 		_build_main_menu()
+	if _side == null:
+		_build_side_buttons()
 	set_in_game_hud_visible(false)
 	_menu.visible = true
+	_side.visible = true
+	Sfx.start_music()
 
 
 func hide_main_menu() -> void:
-	if _menu != null:
-		_menu.visible = false
-	if _gallery != null:
-		_gallery.visible = false
-	if _settings != null:
-		_settings.visible = false
-	if _pause != null:
-		_pause.visible = false
+	Sfx.stop_music()
+	for panel in [_menu, _gallery, _settings, _pause, _side, _howto, _credits]:
+		if panel != null:
+			panel.visible = false
 
 
 func _build_main_menu() -> void:
@@ -386,12 +392,183 @@ func _divider() -> Control:
 	return line
 
 
+# --- Side buttons (How to Play / Credits) ------------------------------------
+
+func _build_side_buttons() -> void:
+	_side = VBoxContainer.new()
+	_side.add_theme_constant_override("separation", 10)
+	_side.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_side.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_side.position = Vector2(24, -24)
+	var howto_btn := _make_button("HOW TO PLAY", SKY)
+	howto_btn.add_theme_font_size_override("font_size", 20)
+	howto_btn.pressed.connect(_open_howto)
+	_side.add_child(howto_btn)
+	var credits_btn := _make_button("CREDITS", TANGERINE)
+	credits_btn.add_theme_font_size_override("font_size", 20)
+	credits_btn.pressed.connect(_open_credits)
+	_side.add_child(credits_btn)
+	add_child(_side)
+
+
+# --- How to play -------------------------------------------------------------
+
+func _open_howto() -> void:
+	if _howto == null:
+		_build_howto()
+	_menu.visible = false
+	_side.visible = false
+	_howto.visible = true
+
+
+func _build_howto() -> void:
+	_howto = CenterContainer.new()
+	_howto.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_howto.visible = false
+	add_child(_howto)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SKY, 64, 48, 18))
+	_howto.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 14)
+	panel.add_child(box)
+
+	var title := _make_label("HOW TO PLAY", 60, SKY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_outline_color", INK)
+	title.add_theme_constant_override("outline_size", 10)
+	box.add_child(title)
+	box.add_child(_divider())
+
+	box.add_child(_howto_line("GOAL", "Stack the most ridiculous tower you can on the mule's red saddle. The higher you go, the more it's worth.", SUNNY))
+	box.add_child(_howto_line("FLY & PLACE", "WASD + mouse to fly. Aim with the crosshair, Q/E to spin, R to tip, Left-Click to place. Objects glue where they land.", LEAF))
+	box.add_child(_howto_line("THE WHEEL", "Press Tab to spin for a modifier (Tiny, Massive, Heavy, Slippery, Super Glue...). It applies to the next object.", TANGERINE))
+	box.add_child(_howto_line("CASH & MULTIPLIER", "Every piece you place pays out at a multiplier that climbs the longer you go (×1, ×1.5, ×2, ×3...). Press Enter to CASH OUT: bank the money and reset the multiplier to ×1.", SUNNY))
+	box.add_child(_howto_line("DON'T COLLAPSE", "If 3 objects fall, the run ends and you lose any money you hadn't cashed out. Bank often, or push your luck!", Color(1.0, 0.5, 0.45)))
+	box.add_child(_howto_line("EXTRAS", "C: photo mode  ·  Esc: pause. A golden item is a rare treat, and the tower's a record to beat.", SKY))
+
+	box.add_child(_divider())
+	var back := _make_button("BACK", LEAF)
+	back.pressed.connect(func() -> void: _back_to_side(_howto))
+	box.add_child(back)
+
+
+func _howto_line(heading: String, body: String, color: Color) -> VBoxContainer:
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 0)
+	vb.custom_minimum_size = Vector2(760, 0)
+	var h := _make_label(heading, 22, color)
+	vb.add_child(h)
+	var b := _make_label(body, 17, CREAM)
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	b.custom_minimum_size = Vector2(760, 0)
+	vb.add_child(b)
+	return vb
+
+
+# --- Credits (scrolling) -----------------------------------------------------
+
+func _open_credits() -> void:
+	if _credits == null:
+		_build_credits()
+	_menu.visible = false
+	_side.visible = false
+	_credits.visible = true
+	_credits_y = CREDITS_CLIP_H  # start just below the clip window, then roll up
+
+
+func _build_credits() -> void:
+	_credits = CenterContainer.new()
+	_credits.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_credits.visible = false
+	add_child(_credits)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, TANGERINE, 40, 32, 18))
+	_credits.add_child(panel)
+
+	# Holder so the panel has a single child; it carries the clipped roll
+	# window and the Back button.
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(660, 540)
+	panel.add_child(holder)
+
+	var clip := Control.new()
+	clip.clip_contents = true
+	clip.position = Vector2(10, 6)
+	clip.size = Vector2(640, CREDITS_CLIP_H)
+	holder.add_child(clip)
+
+	_credits_scroll = VBoxContainer.new()
+	(_credits_scroll as VBoxContainer).add_theme_constant_override("separation", 10)
+	_credits_scroll.size = Vector2(640, 0)
+	clip.add_child(_credits_scroll)
+	for entry in _credits_lines():
+		var lbl := _make_label(entry[1], entry[0], entry[2] as Color)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.custom_minimum_size = Vector2(640, 0)
+		_credits_scroll.add_child(lbl)
+
+	var back := _make_button("BACK", LEAF)
+	back.pressed.connect(func() -> void: _back_to_side(_credits))
+	holder.add_child(back)
+	back.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 16)
+
+
+## [font_size, text, color] rows for the credit roll. PLACEHOLDER — replace
+## with the real credits text.
+func _credits_lines() -> Array:
+	return [
+		[64, "PACK MULE", SUNNY],
+		[20, "", CREAM],
+		[28, "A game by", SKY],
+		[24, "Christoph", CREAM],
+		[20, "", CREAM],
+		[28, "Design & Code", SKY],
+		[24, "Christoph", CREAM],
+		[20, "", CREAM],
+		[28, "Art & Sound", SKY],
+		[24, "(your credits here)", CREAM],
+		[20, "", CREAM],
+		[28, "Built with", SKY],
+		[24, "Godot Engine 4.5", CREAM],
+		[24, "Font: Luckiest Guy", CREAM],
+		[40, "", CREAM],
+		[26, "Thanks for playing!", SUNNY],
+	]
+
+
+func _back_to_side(panel: CenterContainer) -> void:
+	panel.visible = false
+	_menu.visible = true
+	_set_side(true)
+
+
+## Show/hide the corner How-to/Credits buttons (only on the main menu).
+func _set_side(visible: bool) -> void:
+	if _side != null:
+		_side.visible = visible
+
+
+func _process(delta: float) -> void:
+	# Movie-style credit roll while the credits screen is open.
+	if _credits == null or not _credits.visible:
+		return
+	_credits_y -= delta * 45.0
+	var content_h := _credits_scroll.get_combined_minimum_size().y
+	if _credits_y < -content_h:
+		_credits_y = CREDITS_CLIP_H  # loop back to the bottom of the window
+	_credits_scroll.position.y = _credits_y
+
+
 # --- Tower gallery -----------------------------------------------------------
 
 func _open_gallery() -> void:
 	if _gallery == null:
 		_build_gallery()
 	_menu.visible = false
+	_set_side(false)
 	_gallery.visible = true
 	_load_gallery_files()
 	_gallery_index = _gallery_files.size() - 1  # newest first
@@ -497,6 +674,8 @@ func _open_odds(return_to: CenterContainer = null) -> void:
 		_build_odds()
 	_odds_return = return_to if return_to != null else _menu
 	_odds_return.visible = false
+	if _odds_return == _menu:
+		_set_side(false)
 	_odds.visible = true
 	_refresh_odds_pcts()
 
@@ -505,6 +684,8 @@ func _back_from_odds() -> void:
 	_odds.visible = false
 	if _odds_return != null:
 		_odds_return.visible = true
+		if _odds_return == _menu:
+			_set_side(true)
 
 
 func _build_odds() -> void:
@@ -596,6 +777,8 @@ func _open_settings(return_to: CenterContainer = null) -> void:
 		_build_settings()
 	_settings_return = return_to if return_to != null else _menu
 	_settings_return.visible = false
+	if _settings_return == _menu:
+		_set_side(false)
 	_settings.visible = true
 
 
@@ -705,12 +888,15 @@ func _reset_binds() -> void:
 func _back_to_menu(panel: CenterContainer) -> void:
 	panel.visible = false
 	_menu.visible = true
+	_set_side(true)
 
 
 func _back_from_settings() -> void:
 	_settings.visible = false
 	if _settings_return != null:
 		_settings_return.visible = true
+		if _settings_return == _menu:
+			_set_side(true)
 
 
 # --- Pause -------------------------------------------------------------------
@@ -872,6 +1058,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_back_from_settings()
 		elif _gallery != null and _gallery.visible:
 			_back_to_menu(_gallery)
+		elif _howto != null and _howto.visible:
+			_back_to_side(_howto)
+		elif _credits != null and _credits.visible:
+			_back_to_side(_credits)
 		elif _in_run:
 			_toggle_pause()
 		else:
