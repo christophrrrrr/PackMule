@@ -20,6 +20,10 @@ const SETTLE_LINEAR_SPEED := 0.15
 const SETTLE_ANGULAR_SPEED := 0.4
 const SETTLE_STILL_TIME := 0.7
 const SETTLE_TIMEOUT := 6.0
+# A falling piece this far below the donkey's feet is unrecoverable, so it
+# counts as fallen right away (the run can end promptly) even though it keeps
+# tumbling toward the cloud band for the visual.
+const LOST_Y := -3.0
 
 const FRICTION := 1.6
 const BOUNCE := 0.0
@@ -385,6 +389,12 @@ func _physics_process(delta: float) -> void:
 		break_loose()
 		return
 	if state != State.FALLING:
+		return
+	if global_position.y < LOST_Y:
+		# Already past the point of recovery — count it now so a third loss
+		# ends the run immediately, instead of waiting for the long fall to
+		# the kill zone. It keeps falling for the visual (mark_fallen is idempotent).
+		mark_fallen()
 		return
 	_fall_time += delta
 	var is_still := linear_velocity.length() < SETTLE_LINEAR_SPEED \
