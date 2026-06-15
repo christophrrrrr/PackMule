@@ -16,10 +16,19 @@ const SHAKE_DECAY := 6.0
 const START_POSITION := Vector3(8.0, 5.5, 11.0)
 const START_LOOK_AT := Vector3(0.0, 1.0, 0.0)
 
+# A "bubble" the camera can roam: a horizontal radius around the peak, from
+# just above the clouds up to well above a tall tower. Plus solid avoidance
+# so you can't fly into the mountain, donkey, or placed objects.
+const BOUND_RADIUS := 35.0
+const BOUND_MIN_Y := -6.0
+const BOUND_MAX_Y := 55.0
+const AVOID_RADIUS := 1.2
+
 var _speed := 8.0
 var _yaw := 0.0
 var _pitch := 0.0
 var _shake := 0.0
+var _avoid := SphereShape3D.new()
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -30,6 +39,7 @@ func _ready() -> void:
 	look_at(START_LOOK_AT)
 	_yaw = rotation.y
 	_pitch = rotation.x
+	_avoid.radius = AVOID_RADIUS
 	# The game manager owns the mouse mode (the main menu needs a visible
 	# cursor); it captures the mouse when the run starts.
 
@@ -63,7 +73,12 @@ func _process(delta: float) -> void:
 		dir -= Vector3.UP
 	if dir != Vector3.ZERO:
 		var speed := _speed * (SPRINT_MULT if Input.is_key_pressed(KEY_SHIFT) else 1.0)
-		position += dir.normalized() * speed * delta
+		var move := dir.normalized() * speed * delta
+		# Apply each axis separately so you slide along walls instead of
+		# sticking, staying inside the bubble and out of solid geometry.
+		_try_move(Vector3(move.x, 0.0, 0.0))
+		_try_move(Vector3(0.0, move.y, 0.0))
+		_try_move(Vector3(0.0, 0.0, move.z))
 	# Screen shake: jitter the camera, decaying back to centered.
 	if _shake > 0.001:
 		_camera.position = Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0),
@@ -71,6 +86,32 @@ func _process(delta: float) -> void:
 		_shake = move_toward(_shake, 0.0, SHAKE_DECAY * _shake * delta + delta)
 	elif _camera.position != Vector3.ZERO:
 		_camera.position = Vector3.ZERO
+
+
+## Move by one axis if the destination is inside the bubble and not inside
+## solid geometry (mountain / donkey / objects).
+func _try_move(step: Vector3) -> void:
+	var cand := _clamp_bounds(position + step)
+	if not _blocked(cand):
+		position = cand
+
+
+func _clamp_bounds(p: Vector3) -> Vector3:
+	var flat := Vector2(p.x, p.z)
+	if flat.length() > BOUND_RADIUS:
+		flat = flat.normalized() * BOUND_RADIUS
+	return Vector3(flat.x, clampf(p.y, BOUND_MIN_Y, BOUND_MAX_Y), flat.y)
+
+
+func _blocked(p: Vector3) -> bool:
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return false
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = _avoid
+	q.transform = Transform3D(Basis.IDENTITY, p)
+	q.collision_mask = 1 | 2  # static world (mountain/donkey/ground) + objects
+	return not space.intersect_shape(q, 1).is_empty()
 
 
 ## Kick the camera; bigger amount = bigger jolt. Used for impacts/collapses.

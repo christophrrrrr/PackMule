@@ -353,7 +353,8 @@ func touching_bodies(space: PhysicsDirectSpaceState3D) -> Array:
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = _hull
 	query.transform = global_transform
-	query.margin = 0.06
+	query.margin = 0.18  # generous, so a glued piece with a small gap still
+	                     # reads as connected (avoids false "floating" breaks)
 	query.collision_mask = 1 | 2
 	query.exclude = [get_rid()]
 	var bodies := []

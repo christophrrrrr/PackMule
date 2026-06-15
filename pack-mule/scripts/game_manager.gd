@@ -31,9 +31,9 @@ const CAP_RADIUS := 5.5          # dome radius: gentle under the donkey, steep a
                                  # the sides so stray pieces slide off, not stick
 const CLOUD_LAYER_Y := -32.0     # cloud sea far below, so tall rock stays visible
 const KILL_TOP := -29.0          # reaching the cloud band = swallowed, gone
-const CLOUD_DISC_RADIUS := 130.0 # how far the cloud carpet spreads (to the horizon)
-const CLOUD_GRID_STEP := 5.5     # spacing of carpet puffs (smaller = denser)
-const CLOUD_PUFF_SIZE := 11.0    # diameter of one carpet puff
+const CLOUD_DISC_RADIUS := 240.0 # how far the textured cloud puffs spread
+const CLOUD_GRID_STEP := 7.0     # spacing of carpet puffs (smaller = denser)
+const CLOUD_PUFF_SIZE := 13.0    # diameter of one carpet puff
 
 enum Phase { MENU, AIMING, SETTLING, GAME_OVER }
 
@@ -52,6 +52,8 @@ var _pending := 0                # earned-but-not-cashed money (lost on collapse
 var _streak := 0                 # objects placed since the last cash out
 var _multiplier := 1.0           # current multiplier (climbs per piece, resets on cash)
 var _cash_ready := false         # cash out currently allowed (tower at rest, pot > 0)
+var _rest_timer := 0.0           # how long the tower has been continuously at rest
+var _unrooted_last := {}         # pieces that read as unrooted in the previous sweep
 var _strikes := 0
 var _ghost: GhostPreview
 var _settling: StackableObject
@@ -170,10 +172,13 @@ func _physics_process(delta: float) -> void:
 	if _integrity_timer >= INTEGRITY_INTERVAL:
 		_integrity_timer = 0.0
 		_check_integrity()
-	# Cash out is only offered when the tower is settled and you're about to
-	# place the next piece — never while things are still falling (which would
-	# let you bank right before a collapse registers).
-	var ready := _phase == Phase.AIMING and _pending > 0 and _tower_at_rest()
+	# Cash out is only offered when the tower has been settled for a moment
+	# and you're about to place the next piece — never while things are still
+	# falling (which would let you bank right before a collapse registers).
+	# The short rest requirement also stops any 1-frame jitter from flickering
+	# the prompt.
+	_rest_timer = _rest_timer + delta if _tower_at_rest() else 0.0
+	var ready := _phase == Phase.AIMING and _pending > 0 and _rest_timer >= 0.35
 	if ready != _cash_ready:
 		_cash_ready = ready
 		_hud.set_cashout_ready(ready)
@@ -226,9 +231,18 @@ func _check_integrity() -> void:
 			if not rooted.has(n):
 				rooted[n] = true
 				queue.append(n)
+	# Debounce: a piece must read as unrooted for TWO sweeps in a row before
+	# we cut it loose. A single noisy contact miss (which used to break a
+	# settled piece, drop it a hair, re-glue it, and flicker forever) no
+	# longer disturbs a tower that is genuinely resting.
+	var still_unrooted := {}
 	for obj in resting:
 		if not rooted.has(obj):
-			obj.break_loose(true)
+			if _unrooted_last.has(obj):
+				obj.break_loose(true)
+			else:
+				still_unrooted[obj] = true
+	_unrooted_last = still_unrooted
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -962,9 +976,10 @@ func _setup_clouds() -> void:
 	white.albedo_color = Color(0.96, 0.97, 0.99)
 	white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 
-	# Backstop plane just under the puffs.
+	# A huge backstop plane: distant cloud cover stretching to the horizon,
+	# fading into the sky via fog so there's no bare sky beyond the puffs.
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(CLOUD_DISC_RADIUS * 3.0, CLOUD_DISC_RADIUS * 3.0)
+	plane.size = Vector2(4000.0, 4000.0)
 	plane.material = white
 	var sea := MeshInstance3D.new()
 	sea.mesh = plane
