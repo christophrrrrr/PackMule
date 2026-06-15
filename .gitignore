@@ -13,3 +13,4 @@ data_*/
 # OS
 .DS_Store
 Thumbs.db
+.commitmsg.tmp

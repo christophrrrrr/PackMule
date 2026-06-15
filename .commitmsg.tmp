@@ -1,9 +1,0 @@
-Add fade transitions for scene/state switches
-
-A black curtain in the HUD fades in on every scene load and is faded out
-before switching, so the one real hitch (the scene rebuild when returning to
-the menu) happens behind black instead of on screen. PLAY, Stack Again, and
-Main Menu all fade through it now. The wrappers are async; _start_game and
-_on_restart stay synchronous so the test tools are unaffected.
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
