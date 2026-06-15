@@ -23,8 +23,8 @@ one collapse and everything you hadn't banked is gone. Push your luck.
 
 | | |
 | :---: | :---: |
-| ![Main menu](screenshots/menu.png) | ![Shop](screenshots/shop.png) |
-| ![How to play](screenshots/howto.png) | ![Game over postcard](screenshots/postcard.png) |
+| ![Blueprint placement](screenshots/blueprint.png) | ![Main menu](screenshots/menu.png) |
+| ![Shop](screenshots/shop.png) | ![Game over postcard](screenshots/postcard.png) |
 
 ## Features
 

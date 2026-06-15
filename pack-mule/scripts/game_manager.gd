@@ -517,9 +517,10 @@ func _on_object_fell(obj: StackableObject) -> void:
 	# It keeps tumbling for the visual, but it's off the tower now — free it
 	# shortly so dead pieces don't keep falling (and simulating) forever. That
 	# unbounded pile of active bodies was the lag that grew as you played.
-	get_tree().create_timer(3.0).timeout.connect(func() -> void:
-		if is_instance_valid(obj):
-			obj.queue_free())
+	# Connecting straight to obj.queue_free (not a capturing lambda) means the
+	# timer auto-disconnects if obj is freed first (e.g. a restart) — no
+	# "lambda capture was freed" warnings.
+	get_tree().create_timer(3.0).timeout.connect(obj.queue_free)
 	_strikes += 1
 	var now := Time.get_ticks_msec() / 1000.0
 	_fall_times.append(now)
@@ -832,8 +833,8 @@ func _capture_tower_photo() -> Image:
 		return null  # no renderer in headless test runs
 	var aabb := _tower_world_aabb()
 	var center := aabb.get_center()
-	var vp := get_viewport().get_visible_rect().size
-	var aspect := vp.x / vp.y
+	var size := get_viewport().get_visible_rect().size
+	var aspect := size.x / size.y
 	var v_half := deg_to_rad(_camera.fov * 0.5)        # vertical half-FOV
 	var h_half := atan(tan(v_half) * aspect)           # horizontal half-FOV
 	# Side-on profile of the mule. Kept nearly level (small Y) so the
@@ -846,12 +847,25 @@ func _capture_tower_photo() -> Image:
 	var dist_v := (aabb.size.y * 0.5) / tan(v_half)
 	var dist_h := (maxf(aabb.size.x, aabb.size.z) * 0.5) / tan(h_half)
 	var dist := maxf(dist_v, dist_h) * 1.18
-	_camera.global_position = center + dir * dist
-	_camera.look_at(center, Vector3.UP)
-	# Let the moved camera render before grabbing the frame.
-	await get_tree().process_frame
-	await get_tree().process_frame
-	return get_viewport().get_texture().get_image()
+	# Shoot from a throwaway off-screen viewport that SHARES the live scene, so
+	# the player's own camera never moves — the last view simply freezes behind
+	# the panel instead of teleporting to the side of the tower.
+	var shot := SubViewport.new()
+	shot.size = Vector2i(size)
+	shot.world_3d = get_world_3d()
+	shot.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(shot)
+	var cam := Camera3D.new()
+	cam.fov = _camera.fov
+	shot.add_child(cam)
+	cam.global_position = center + dir * dist
+	cam.look_at(center, Vector3.UP)
+	cam.current = true
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := shot.get_texture().get_image()
+	shot.queue_free()
+	return img
 
 
 var _dust_mesh: SphereMesh

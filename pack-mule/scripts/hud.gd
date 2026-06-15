@@ -1437,10 +1437,13 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 func _pop_in_panel() -> void:
 	await get_tree().process_frame  # let the panel get its size
 	_go_panel.pivot_offset = _go_panel.size / 2.0
-	_go_panel.scale = Vector2(0.85, 0.85)
-	var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_go_panel.scale = Vector2(0.9, 0.9)
+	_go_panel.modulate.a = 0.0
+	var tw := create_tween().set_parallel(true)
 	tw.set_ignore_time_scale(true)
-	tw.tween_property(_go_panel, "scale", Vector2.ONE, 0.35)
+	tw.tween_property(_go_panel, "scale", Vector2.ONE, 0.35) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_go_panel, "modulate:a", 1.0, 0.28)
 
 
 func _build_game_over_ui() -> void:
