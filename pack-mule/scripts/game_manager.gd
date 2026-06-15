@@ -74,6 +74,22 @@ var _event_milestone := 0        # highest 10 m mark that has fired an event
 var _record := 0.0               # best height ever (loaded from settings)
 var _beat_record := false        # this run has already surpassed the record
 
+# Shop perks, resolved at the start of each run.
+var _strikes_cap := STRIKES_TO_LOSE
+var _collapse_cap := COLLAPSE_COUNT
+var _safety_used := false         # Safety Rope already spent this run
+var _exotic_boost := false        # Exotic Crate: rare cargo shows up more
+
+# Saddle geometry, captured in _setup_donkey so the platform can be rebuilt
+# when a skin is equipped or the Wide Saddle perk changes its width.
+var _saddle_nodes: Array[Node] = []
+var _saddle_along_x := true
+var _saddle_base_w := 1.0
+var _saddle_l := 1.0
+var _saddle_axis := Vector3.RIGHT
+var _saddle_t_center := 0.0
+var _saddle_back_y := 0.0
+
 const GOLDEN_CHANCE := 0.01      # 1% of objects spawn golden (cosmetic)
 
 
@@ -92,6 +108,7 @@ func _ready() -> void:
 	_hud.photo_to_pause_requested.connect(_photo_to_pause)
 	_hud.cash_out_requested.connect(_cash_out)
 	_hud.wheel_landed.connect(_on_wheel_landed)
+	_hud.skin_changed.connect(_apply_saddle)  # live recolor on the menu
 	if _autostart:
 		_autostart = false
 		_start_game()
@@ -116,8 +133,14 @@ func _start_game() -> void:
 	_beat_record = false
 	_banked = 0
 	_pending = 0
-	_streak = 0
-	_multiplier = 1.0
+	# Apply purchased perks for this run.
+	_strikes_cap = STRIKES_TO_LOSE + (1 if GameSettings.owns("reinforced") else 0)
+	_collapse_cap = COLLAPSE_COUNT + (1 if GameSettings.owns("reinforced") else 0)
+	_safety_used = false
+	_exotic_boost = GameSettings.owns("exotic")
+	_apply_saddle()               # picks up the Wide Saddle perk + equipped skin
+	_streak = _base_streak()
+	_multiplier = _streak_multiplier(_streak)
 	_hud.hide_main_menu()
 	_hud.set_in_game_hud_visible(true)
 	_hud.set_in_run(true)
@@ -341,6 +364,8 @@ func _weighted_pick() -> int:
 	var weights: Array[float] = []
 	for i in ObjectCatalog.ENTRIES.size():
 		var w: float = GameSettings.get_weight(ObjectCatalog.ENTRIES[i]["name"])
+		if _exotic_boost and ObjectCatalog.ENTRIES[i]["name"] in ShopCatalog.EXOTIC_NAMES:
+			w *= ShopCatalog.EXOTIC_MULT
 		if i == _last_index:
 			w *= 0.0001  # all but eliminate an immediate repeat
 		weights.append(w)
@@ -422,6 +447,31 @@ func _streak_multiplier(streak: int) -> float:
 	return m
 
 
+## The streak the multiplier resets to: 1 (a x1.5 start) with the Head Start
+## perk, otherwise 0 (a x1 start). Used at run start and after each cash out.
+func _base_streak() -> int:
+	return 1 if GameSettings.owns("head_start") else 0
+
+
+## Safety Rope perk: the first run-ending collapse each run is survived. The
+## pending pot is forfeit and the multiplier resets, but the run continues.
+## Returns true if it fired (so the caller skips game over).
+func _try_safety() -> bool:
+	if _safety_used or not GameSettings.owns("safety_rope"):
+		return false
+	_safety_used = true
+	_fall_times.clear()
+	_strikes = 0
+	_pending = 0
+	_streak = _base_streak()
+	_multiplier = _streak_multiplier(_streak)
+	Sfx.play("ding")
+	_hud.toast("SAFETY ROPE!  Run saved.", Color(0.42, 0.80, 0.36))
+	_hud.set_pending(_pending, _multiplier)
+	_refresh_hud()
+	return true
+
+
 ## Every settle (including pieces that re-settle after glue broke): glue
 ## down only if the piece is part of the tower (touching the donkey or an
 ## already-glued piece). A piece that merely landed on the mountainside
@@ -461,11 +511,12 @@ func _on_object_fell(obj: StackableObject) -> void:
 		_fall_times.remove_at(0)
 	_recompute_tower_top()
 	_refresh_hud()
-	if _fall_times.size() >= COLLAPSE_COUNT:
-		_game_over("TOWER COLLAPSED!")
-	elif _strikes >= STRIKES_TO_LOSE:
-		_game_over("TOO MANY FALLEN OBJECTS")
-	elif obj == _settling:
+	if _fall_times.size() >= _collapse_cap or _strikes >= _strikes_cap:
+		if not _try_safety():
+			_game_over("TOWER COLLAPSED!" if _fall_times.size() >= _collapse_cap \
+					else "TOO MANY FALLEN OBJECTS")
+			return
+	if obj == _settling:
 		_settling = null
 		_spawn_next()
 
@@ -663,8 +714,8 @@ func _cash_out() -> void:
 	var amount := _pending
 	_banked += amount
 	_pending = 0
-	_streak = 0
-	_multiplier = 1.0
+	_streak = _base_streak()
+	_multiplier = _streak_multiplier(_streak)
 	Sfx.play("register")
 	Sfx.play("coin")
 	_hud.bank_flourish(_banked, amount)
@@ -710,6 +761,7 @@ func _game_over(reason: String) -> void:
 	var is_record := _max_height > _record
 	GameSettings.set_record(maxf(_record, _max_height))
 	GameSettings.set_score_record(maxi(GameSettings.get_score_record(), _banked))
+	GameSettings.add_wallet(_banked)   # banked cash flows into the spendable wallet
 	var stats := {
 		"height": _max_height,
 		"objects": _placed_count,
@@ -718,6 +770,7 @@ func _game_over(reason: String) -> void:
 		"lost": lost,
 		"record": maxf(_record, _max_height),
 		"score_record": GameSettings.get_score_record(),
+		"wallet": GameSettings.get_wallet(),
 		"new_record": is_record,
 	}
 	_hud.show_game_over(reason, stats, photo)
@@ -1102,12 +1155,31 @@ func _setup_donkey() -> void:
 	if back_y <= 0.0:
 		back_y = aabb.size.y * sf * 0.6
 
+	# Remember the geometry so the platform can be rebuilt when a skin is
+	# equipped or the Wide Saddle perk widens it, then build it once.
+	_saddle_along_x = along_x
+	_saddle_base_w = saddle_w
+	_saddle_l = saddle_l
+	_saddle_axis = axis
+	_saddle_t_center = t_center
+	_saddle_back_y = back_y
+	_apply_saddle()
+
+
+## Builds (or rebuilds) the saddle platform — collision plus the colored
+## blanket — from the captured geometry, the equipped skin, and the Wide
+## Saddle perk. Cheap, so it can run on a skin change or at run start.
+func _apply_saddle() -> void:
+	for n in _saddle_nodes:
+		n.free()
+	_saddle_nodes.clear()
+	var width := _saddle_base_w * (1.3 if GameSettings.owns("wide_saddle") else 1.0)
 	# Bottom sinks 2 cm into the fur so there is no visible gap.
-	var saddle_size := Vector3(saddle_l, 0.12, saddle_w) if along_x \
-			else Vector3(saddle_w, 0.12, saddle_l)
-	var saddle_top := back_y - 0.02 + saddle_size.y
+	var saddle_size := Vector3(_saddle_l, 0.12, width) if _saddle_along_x \
+			else Vector3(width, 0.12, _saddle_l)
+	var saddle_top := _saddle_back_y - 0.02 + saddle_size.y
 	_add_platform(saddle_size,
-			axis * t_center + Vector3(0.0, saddle_top - saddle_size.y / 2.0, 0.0))
+			_saddle_axis * _saddle_t_center + Vector3(0.0, saddle_top - saddle_size.y / 2.0, 0.0))
 
 	_base_top = saddle_top
 	_tower_top = saddle_top
@@ -1133,13 +1205,15 @@ func _add_platform(size: Vector3, box_center: Vector3) -> void:
 	col.shape = box
 	col.position = box_center
 	_donkey_base.add_child(col)
-	# Dark red blanket so the primary landing zone reads clearly.
+	# The blanket (equipped skin color) so the primary landing zone reads clearly.
 	var bm := BoxMesh.new()
 	bm.size = size
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.55, 0.15, 0.15)
+	mat.albedo_color = ShopCatalog.skin_color(GameSettings.get_skin())
 	bm.material = mat
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = bm
 	mesh.position = box_center
 	_donkey_base.add_child(mesh)
+	_saddle_nodes.append(col)
+	_saddle_nodes.append(mesh)

@@ -12,6 +12,7 @@ signal photo_enter_requested
 signal photo_to_pause_requested
 signal cash_out_requested
 signal wheel_landed(modifier: Dictionary)
+signal skin_changed              # the equipped saddle skin changed (live recolor)
 
 # Cartoon palette.
 const CREAM := Color(0.98, 0.96, 0.89)
@@ -63,6 +64,10 @@ var _howto: CenterContainer
 var _credits: CenterContainer
 var _credits_scroll: Control           # the moving credits roll
 var _credits_y := 0.0
+var _menu_best: Label                   # the menu's best-height / wallet line
+var _shop: CenterContainer
+var _shop_body: HBoxContainer           # the rebuilt item columns
+var _shop_wallet: Label                 # the shop's live wallet readout
 var _listening := ""              # action currently waiting for a new key
 var _listening_btn: Button
 var _bind_buttons := {}
@@ -135,8 +140,23 @@ func flash() -> void:
 	tw.tween_property(_flash, "color:a", 0.0, 0.3)
 
 
+## A brief centered banner for one-off messages (e.g. the Safety Rope save).
+func toast(text: String, color: Color = SUNNY) -> void:
+	_record_banner.text = text
+	_record_banner.add_theme_color_override("font_color", color)
+	_record_banner.add_theme_font_size_override("font_size", 44)
+	_banner_pop()
+
+
 ## Big "NEW RECORD!" celebration when this run beats the all-time best.
 func celebrate_record() -> void:
+	_record_banner.text = "NEW RECORD!"
+	_record_banner.add_theme_color_override("font_color", SUNNY)
+	_record_banner.add_theme_font_size_override("font_size", 56)
+	_banner_pop()
+
+
+func _banner_pop() -> void:
 	_record_banner.modulate.a = 1.0
 	_record_banner.scale = Vector2(0.5, 0.5)
 	_record_banner.pivot_offset = _record_banner.size / 2.0
@@ -314,14 +334,20 @@ func show_main_menu() -> void:
 	if _side == null:
 		_build_side_buttons()
 	set_in_game_hud_visible(false)
+	_menu_best.text = _menu_best_text()  # wallet may have grown since last shown
 	_menu.visible = true
 	_side.visible = true
 	Sfx.start_music()
 
 
+func _menu_best_text() -> String:
+	return "BEST  %.1f M   ·   WALLET  $%s" % [
+			GameSettings.get_record(), _money_str(GameSettings.get_wallet())]
+
+
 func hide_main_menu() -> void:
 	Sfx.stop_music()
-	for panel in [_menu, _gallery, _settings, _pause, _side, _howto, _credits]:
+	for panel in [_menu, _gallery, _settings, _pause, _side, _howto, _credits, _shop]:
 		if panel != null:
 			panel.visible = false
 
@@ -350,9 +376,9 @@ func _build_main_menu() -> void:
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(tagline)
 
-	var best := _make_label("BEST  %.1f M   ·   $%s" % [GameSettings.get_record(), _money_str(GameSettings.get_score_record())], 26, SUNNY)
-	best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(best)
+	_menu_best = _make_label(_menu_best_text(), 26, SUNNY)
+	_menu_best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_menu_best)
 
 	box.add_child(_divider())
 
@@ -361,6 +387,12 @@ func _build_main_menu() -> void:
 	play.custom_minimum_size = Vector2(440, 0)
 	play.pressed.connect(func() -> void: start_requested.emit())
 	box.add_child(play)
+
+	var shop := _make_button("SHOP", SUNNY)
+	shop.add_theme_font_size_override("font_size", 34)
+	shop.custom_minimum_size = Vector2(440, 0)
+	shop.pressed.connect(_open_shop)
+	box.add_child(shop)
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 20)
@@ -446,6 +478,7 @@ func _build_howto() -> void:
 	box.add_child(_howto_line("THE WHEEL", "Press Tab to spin for a modifier (Tiny, Massive, Heavy, Slippery, Super Glue...). It applies to the next object.", TANGERINE))
 	box.add_child(_howto_line("CASH & MULTIPLIER", "Every piece you place pays out at a multiplier that climbs the longer you go (×1, ×1.5, ×2, ×3...). Press Enter to CASH OUT: bank the money and reset the multiplier to ×1.", SUNNY))
 	box.add_child(_howto_line("DON'T COLLAPSE", "If 3 objects fall, the run ends and you lose any money you hadn't cashed out. Bank often, or push your luck!", Color(1.0, 0.5, 0.45)))
+	box.add_child(_howto_line("SPEND IT", "Banked cash carries over into your WALLET. Spend it in the SHOP on perks, a spawn booster, and saddle skins for your mule.", LEAF))
 	box.add_child(_howto_line("EXTRAS", "C: photo mode  ·  Esc: pause. A golden item is a rare treat, and the tower's a record to beat.", SKY))
 
 	box.add_child(_divider())
@@ -549,6 +582,167 @@ func _back_to_side(panel: CenterContainer) -> void:
 func _set_side(visible: bool) -> void:
 	if _side != null:
 		_side.visible = visible
+
+
+# --- Shop --------------------------------------------------------------------
+
+func _open_shop() -> void:
+	if _shop == null:
+		_build_shop()
+	_menu.visible = false
+	_set_side(false)
+	_populate_shop()
+	_shop.visible = true
+
+
+func _build_shop() -> void:
+	_shop = CenterContainer.new()
+	_shop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_shop.visible = false
+	add_child(_shop)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY, 40, 32, 18))
+	_shop.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	panel.add_child(box)
+
+	var title := _make_label("SHOP", 60, SUNNY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_outline_color", INK)
+	title.add_theme_constant_override("outline_size", 10)
+	box.add_child(title)
+
+	_shop_wallet = _make_label("", 28, LEAF)
+	_shop_wallet.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(_shop_wallet)
+
+	box.add_child(_divider())
+
+	_shop_body = HBoxContainer.new()
+	_shop_body.add_theme_constant_override("separation", 20)
+	_shop_body.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(_shop_body)
+
+	box.add_child(_divider())
+	var back := _make_button("BACK", LEAF)
+	back.pressed.connect(func() -> void: _back_to_menu(_shop))
+	box.add_child(back)
+
+
+## Fills (or refills) the two shop columns and the wallet readout — called on
+## open and after every purchase / equip so prices and states stay correct.
+func _populate_shop() -> void:
+	_shop_wallet.text = "WALLET   $%s" % _money_str(GameSettings.get_wallet())
+	for c in _shop_body.get_children():
+		_shop_body.remove_child(c)
+		c.queue_free()
+
+	var left := _shop_column("UPGRADES")
+	for item: Dictionary in ShopCatalog.PERKS:
+		left.add_child(_shop_row(item, false))
+	for item: Dictionary in ShopCatalog.BOOSTS:
+		left.add_child(_shop_row(item, false))
+	_shop_body.add_child(left)
+
+	var right := _shop_column("SADDLE SKINS")
+	for item: Dictionary in ShopCatalog.SKINS:
+		right.add_child(_shop_row(item, true))
+	_shop_body.add_child(right)
+
+
+func _shop_column(heading: String) -> VBoxContainer:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 10)
+	var h := _make_label(heading, 26, SKY)
+	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(h)
+	return col
+
+
+## One item card: name + description (or a color swatch for skins) on the
+## left, and an action button (price / OWNED / EQUIP / EQUIPPED) on the right.
+func _shop_row(item: Dictionary, is_skin: bool) -> PanelContainer:
+	var id: String = item["id"]
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel",
+			_rounded(Color(1, 1, 1, 0.06), 14, Color(0, 0, 0, 0), 16, 10))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	card.add_child(row)
+
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 2)
+	info.custom_minimum_size = Vector2(320, 0)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_child(_make_label(item["name"], 22, CREAM))
+	if item.has("desc"):
+		var desc := _make_label(item["desc"], 15, Color(0.82, 0.85, 0.95))
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc.custom_minimum_size = Vector2(320, 0)
+		info.add_child(desc)
+	if is_skin:
+		var swatch := ColorRect.new()
+		swatch.color = ShopCatalog.skin_color(id)
+		swatch.custom_minimum_size = Vector2(320, 16)
+		info.add_child(swatch)
+	row.add_child(info)
+
+	var btn := _shop_action_button(item, is_skin)
+	btn.custom_minimum_size = Vector2(150, 0)
+	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(btn)
+	return card
+
+
+func _shop_action_button(item: Dictionary, is_skin: bool) -> Button:
+	var id: String = item["id"]
+	var price: int = int(item["price"])
+	var btn: Button
+	if is_skin:
+		if GameSettings.get_skin() == id:
+			btn = _make_button("EQUIPPED", LEAF)
+			btn.disabled = true
+		elif GameSettings.owns(id):
+			btn = _make_button("EQUIP", SKY)
+			btn.pressed.connect(func() -> void: _shop_equip(id))
+		else:
+			btn = _make_button("$%s" % _money_str(price), SUNNY)
+			btn.pressed.connect(func() -> void: _shop_buy(item, true))
+	elif GameSettings.owns(id):
+		btn = _make_button("OWNED", LEAF)
+		btn.disabled = true
+	else:
+		btn = _make_button("$%s" % _money_str(price), SUNNY)
+		btn.pressed.connect(func() -> void: _shop_buy(item, false))
+	btn.add_theme_font_size_override("font_size", 20)
+	return btn
+
+
+func _shop_buy(item: Dictionary, is_skin: bool) -> void:
+	var id: String = item["id"]
+	if GameSettings.owns(id):
+		return
+	if GameSettings.spend_wallet(int(item["price"])):
+		GameSettings.buy(id)
+		Sfx.play("register")
+		Sfx.play("coin")
+		if is_skin:
+			GameSettings.set_skin(id)
+			skin_changed.emit()
+		_punch(_shop_wallet, 1.2)
+		_populate_shop()
+	else:
+		Sfx.play("sting")  # can't afford
+		_punch(_shop_wallet, 1.25)
+
+
+func _shop_equip(id: String) -> void:
+	GameSettings.set_skin(id)
+	skin_changed.emit()
+	Sfx.play("ding")
+	_populate_shop()
 
 
 func _process(delta: float) -> void:
@@ -1062,6 +1256,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_back_to_side(_howto)
 		elif _credits != null and _credits.visible:
 			_back_to_side(_credits)
+		elif _shop != null and _shop.visible:
+			_back_to_menu(_shop)
 		elif _in_run:
 			_toggle_pause()
 		else:
@@ -1082,12 +1278,12 @@ func show_game_over(reason: String, stats: Dictionary, photo: Image) -> void:
 		_go_title.text = reason
 	var banked := int(stats["score"])
 	var lost := int(stats.get("lost", 0))
-	var best := int(stats.get("score_record", 0))
+	var wallet := int(stats.get("wallet", 0))
 	if lost > 0:
-		_go_subtitle.text = "BANKED  $%s   ·   LOST $%s UNCASHED   ·   BEST $%s" % [
-				_money_str(banked), _money_str(lost), _money_str(best)]
+		_go_subtitle.text = "BANKED  $%s   ·   LOST $%s UNCASHED   ·   WALLET  $%s" % [
+				_money_str(banked), _money_str(lost), _money_str(wallet)]
 	else:
-		_go_subtitle.text = "BANKED  $%s      BEST  $%s" % [_money_str(banked), _money_str(best)]
+		_go_subtitle.text = "BANKED  $%s      WALLET  $%s" % [_money_str(banked), _money_str(wallet)]
 	_chip_values["HEIGHT"].text = "%.1f m" % float(stats["height"])
 	_chip_values["OBJECTS"].text = "%d" % int(stats["objects"])
 	_chip_values["WEIGHT"].text = "%d kg" % int(round(float(stats["weight"])))
@@ -1264,11 +1460,12 @@ func _make_button(text: String, color: Color) -> Button:
 	var btn := Button.new()
 	btn.text = text
 	btn.add_theme_font_size_override("font_size", 28)
-	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_disabled_color"]:
 		btn.add_theme_color_override(c, INK)
 	btn.add_theme_stylebox_override("normal", _rounded(color, 18, color.darkened(0.3), 26, 14, 5))
 	btn.add_theme_stylebox_override("hover", _rounded(color.lightened(0.12), 18, color.darkened(0.3), 26, 14, 6))
 	btn.add_theme_stylebox_override("pressed", _rounded(color.darkened(0.12), 18, color.darkened(0.3), 26, 14, 2))
+	btn.add_theme_stylebox_override("disabled", _rounded(color.darkened(0.08), 18, color.darkened(0.3), 26, 14, 3))
 	btn.add_theme_stylebox_override("focus", _rounded(Color(0, 0, 0, 0), 18, CREAM, 26, 14))
 	return btn
 

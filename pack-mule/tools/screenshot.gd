@@ -50,6 +50,8 @@ func _process(_delta: float) -> bool:
 		(root.get_node("Main/HUD") as GameHud)._open_howto()
 	if _frames == 8 and "credits" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_credits()
+	if _frames == 8 and "shop" in OS.get_cmdline_user_args():
+		(root.get_node("Main/HUD") as GameHud)._open_shop()
 	if _frames == 8 and "settings" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_settings()
 	if _frames == 8 and "galleryview" in OS.get_cmdline_user_args():

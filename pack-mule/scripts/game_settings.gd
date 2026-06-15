@@ -229,3 +229,67 @@ static func set_score_record(value: int) -> void:
 		return
 	_inst._cfg.set_value("stats", "best_score", value)
 	_inst._save()
+
+
+# --- Shop: wallet, unlocks, equipped skin ------------------------------------
+
+static func get_wallet() -> int:
+	return int(_inst._cfg.get_value("shop", "wallet", 0)) if _inst != null else 0
+
+
+static func set_wallet(value: int) -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("shop", "wallet", maxi(0, value))
+	_inst._save()
+
+
+static func add_wallet(amount: int) -> void:
+	if amount > 0:
+		set_wallet(get_wallet() + amount)
+
+
+## Spends from the wallet if it can be afforded; true on success.
+static func spend_wallet(amount: int) -> bool:
+	if _inst == null or amount > get_wallet():
+		return false
+	set_wallet(get_wallet() - amount)
+	return true
+
+
+## Owns a perk/boost/skin. The default red saddle is always owned.
+static func owns(id: String) -> bool:
+	if id == ShopCatalog.DEFAULT_SKIN:
+		return true
+	return bool(_inst._cfg.get_value("shop_items", id, false)) if _inst != null else false
+
+
+static func buy(id: String) -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("shop_items", id, true)
+	_inst._save()
+
+
+static func get_skin() -> String:
+	if _inst == null:
+		return ShopCatalog.DEFAULT_SKIN
+	return str(_inst._cfg.get_value("shop", "skin", ShopCatalog.DEFAULT_SKIN))
+
+
+static func set_skin(id: String) -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("shop", "skin", id)
+	_inst._save()
+
+
+## Wipes all shop progress (wallet, unlocks, equipped skin). Used by tests
+## to restore a clean slate; also a hook for a future "reset progress".
+static func reset_shop() -> void:
+	if _inst == null:
+		return
+	for section: String in ["shop", "shop_items"]:
+		if _inst._cfg.has_section(section):
+			_inst._cfg.erase_section(section)
+	_inst._save()

@@ -34,7 +34,9 @@ func _process(_dt: float) -> bool:
 		_check("multiplier streak %d = %s" % [i, want[i]],
 				is_equal_approx(_gm._streak_multiplier(i), want[i]))
 
-	# Cash out banks the pending pot and resets the multiplier.
+	# Cash out banks the pending pot and resets the multiplier to its base
+	# (0 normally, 1 with the Head Start perk owned).
+	var base_streak: int = _gm._base_streak()
 	_gm._pending = 175
 	_gm._streak = 5
 	_gm._multiplier = 6.0
@@ -42,8 +44,9 @@ func _process(_dt: float) -> bool:
 	_gm._cash_out()
 	_check("cash out adds pending to banked", _gm._banked == 215)
 	_check("cash out clears pending", _gm._pending == 0)
-	_check("cash out resets multiplier to 1", is_equal_approx(_gm._multiplier, 1.0))
-	_check("cash out resets streak", _gm._streak == 0)
+	_check("cash out resets multiplier to base",
+			is_equal_approx(_gm._multiplier, _gm._streak_multiplier(base_streak)))
+	_check("cash out resets streak to base", _gm._streak == base_streak)
 	_check("run continues after cash out (not game over)",
 			_gm._phase != GameManager.Phase.GAME_OVER)
 
