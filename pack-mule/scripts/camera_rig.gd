@@ -35,12 +35,8 @@ var _avoid := SphereShape3D.new()
 
 
 func _ready() -> void:
-	_camera.position = Vector3.ZERO
-	position = START_POSITION
-	look_at(START_LOOK_AT)
-	_yaw = rotation.y
-	_pitch = rotation.x
 	_avoid.radius = AVOID_RADIUS
+	reset_view()
 	# The game manager owns the mouse mode (the main menu needs a visible
 	# cursor); it captures the mouse when the run starts.
 
@@ -130,12 +126,16 @@ func reset_flight() -> void:
 	_shake = 0.0
 
 
-## Snap the camera back to its opening pose (used by the in-place restart).
+## Snap the camera back to its opening pose. Yaw and pitch are computed
+## directly (no look_at) so the rotation is always roll-free and identical
+## every time — look_at's euler decomposition could otherwise fold in a roll
+## and leave the camera tilted/flipped after a restart.
 func reset_view() -> void:
 	position = START_POSITION
-	look_at(START_LOOK_AT)
-	_yaw = rotation.y
-	_pitch = rotation.x
+	var dir := (START_LOOK_AT - START_POSITION).normalized()
+	_pitch = asin(clampf(dir.y, -1.0, 1.0))
+	_yaw = atan2(-dir.x, -dir.z)
+	rotation = Vector3(_pitch, _yaw, 0.0)
 	_camera.position = Vector3.ZERO
 	reset_flight()
 

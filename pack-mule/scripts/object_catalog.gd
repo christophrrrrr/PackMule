@@ -26,7 +26,7 @@ const ENTRIES := [
 	{"name": "Grill", "path": "res://assets/Grill.glb", "size": 1.2, "mass": 30.0, "weight": 6.0, "sound": "metal"},
 	{"name": "Helicopter", "path": "res://assets/Helicopter.glb", "size": 3.0, "mass": 200.0, "weight": 1.5, "sound": "metal"},
 	{"name": "T-Rex", "path": "res://assets/T-Rex.glb", "size": 2.6, "mass": 170.0, "weight": 1.5, "sound": "trex"},
-	{"name": "Windmill", "path": "res://assets/Windmill.glb", "size": 2.8, "mass": 55.0, "weight": 3.0, "sound": "wood"},
+	{"name": "Windmill", "path": "res://assets/Windmill.glb", "size": 2.8, "mass": 55.0, "weight": 1.0, "sound": "wood"},
 	{"name": "Alien", "path": "res://assets/Alien.glb", "size": 1.6, "mass": 45.0, "weight": 3.0, "sound": "alien"},
 	{"name": "Flying Saucer", "path": "res://assets/Flying saucer.glb", "size": 2.6, "mass": 100.0, "weight": 2.0, "sound": "metal"},
 	{"name": "Anvil", "path": "res://assets/Anvil.glb", "size": 0.8, "mass": 130.0, "weight": 6.0, "sound": "metal"},

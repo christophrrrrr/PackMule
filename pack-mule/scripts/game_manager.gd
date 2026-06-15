@@ -17,6 +17,7 @@ const AIM_RANGE := 200.0
 const YAW_SPEED := 2.6           # rad/s while holding Q/E
 const DONKEY_LENGTH := 3.0       # normalized donkey body length in meters
 const INTEGRITY_INTERVAL := 0.4  # seconds between floating-piece sweeps
+const INTEGRITY_REST_GRACE := 1.5  # stop sweeping once the tower's been still this long
 
 # The donkey stays at the origin; the mountain is built downward from it,
 # peak under the donkey's hooves. Everything below the cloud layer is
@@ -220,16 +221,22 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Track how long the whole tower has been completely at rest. Cash out and
+	# the anti-float sweep both key off this.
+	_rest_timer = _rest_timer + delta if _tower_at_rest() else 0.0
+	# Floating pieces can only appear when something moves (a support breaks →
+	# that piece falls → the tower is no longer at rest). So a tower that has
+	# been still for a while can't spontaneously float, and we stop sweeping it.
+	# That removes the per-sweep O(pieces) physics queries that piled up on a
+	# tall, settled tower — the lag spike that grew with height.
 	_integrity_timer += delta
 	if _integrity_timer >= INTEGRITY_INTERVAL:
 		_integrity_timer = 0.0
-		_check_integrity()
+		if _rest_timer < INTEGRITY_REST_GRACE:
+			_check_integrity()
 	# Cash out is only offered when the tower has been settled for a moment
 	# and you're about to place the next piece — never while things are still
 	# falling (which would let you bank right before a collapse registers).
-	# The short rest requirement also stops any 1-frame jitter from flickering
-	# the prompt.
-	_rest_timer = _rest_timer + delta if _tower_at_rest() else 0.0
 	var ready := _phase == Phase.AIMING and _pending > 0 and _rest_timer >= 0.35
 	if ready != _cash_ready:
 		_cash_ready = ready

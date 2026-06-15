@@ -19,9 +19,12 @@ one collapse and everything you hadn't banked is gone. Push your luck.
 
 ## Screenshots
 
-| Main menu | Shop | How to play |
-| :---: | :---: | :---: |
-| ![Menu](screenshots/menu.png) | ![Shop](screenshots/shop.png) | ![How to play](screenshots/howto.png) |
+![Stacking above the clouds](screenshots/gameplay.png)
+
+| | |
+| :---: | :---: |
+| ![Main menu](screenshots/menu.png) | ![Shop](screenshots/shop.png) |
+| ![How to play](screenshots/howto.png) | ![Game over postcard](screenshots/postcard.png) |
 
 ## Features
 
