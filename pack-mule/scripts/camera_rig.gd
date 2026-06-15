@@ -74,11 +74,13 @@ func _process(delta: float) -> void:
 	if dir != Vector3.ZERO:
 		var speed := _speed * (SPRINT_MULT if Input.is_key_pressed(KEY_SHIFT) else 1.0)
 		var move := dir.normalized() * speed * delta
-		# Apply each axis separately so you slide along walls instead of
-		# sticking, staying inside the bubble and out of solid geometry.
-		_try_move(Vector3(move.x, 0.0, 0.0))
-		_try_move(Vector3(0.0, move.y, 0.0))
-		_try_move(Vector3(0.0, 0.0, move.z))
+		# If something (e.g. a freshly placed object) ended up around the
+		# camera, let it fly out freely; otherwise slide along walls and stay
+		# inside the bubble and out of solid geometry.
+		var stuck := _blocked(position)
+		_try_move(Vector3(move.x, 0.0, 0.0), stuck)
+		_try_move(Vector3(0.0, move.y, 0.0), stuck)
+		_try_move(Vector3(0.0, 0.0, move.z), stuck)
 	# Screen shake: jitter the camera, decaying back to centered.
 	if _shake > 0.001:
 		_camera.position = Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0),
@@ -89,10 +91,11 @@ func _process(delta: float) -> void:
 
 
 ## Move by one axis if the destination is inside the bubble and not inside
-## solid geometry (mountain / donkey / objects).
-func _try_move(step: Vector3) -> void:
+## solid geometry — unless we're already stuck inside something, in which
+## case any move is allowed so the player can get out.
+func _try_move(step: Vector3, stuck: bool) -> void:
 	var cand := _clamp_bounds(position + step)
-	if not _blocked(cand):
+	if stuck or not _blocked(cand):
 		position = cand
 
 

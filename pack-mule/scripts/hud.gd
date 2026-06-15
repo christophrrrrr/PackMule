@@ -693,6 +693,7 @@ func _begin_listen(action: String, btn: Button) -> void:
 	_listening = action
 	_listening_btn = btn
 	btn.text = "PRESS A KEY..."
+	btn.release_focus()  # so Space/Enter don't re-press this button
 
 
 func _reset_binds() -> void:
@@ -829,6 +830,25 @@ func _snap_photo() -> void:
 		_photo_hint.visible = true
 
 
+## Rebind capture runs in _input (before the GUI), so keys like Space and
+## Enter — which would otherwise activate the focused button — are caught
+## and assigned instead.
+func _input(event: InputEvent) -> void:
+	if _listening.is_empty():
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		get_viewport().set_input_as_handled()
+		if (event as InputEventKey).keycode != KEY_ESCAPE:
+			GameSettings.rebind(_listening, event)
+		_listening_btn.text = GameSettings.binding_text(_listening)
+		_listening = ""
+	elif event is InputEventMouseButton and event.pressed:
+		get_viewport().set_input_as_handled()
+		GameSettings.rebind(_listening, event)
+		_listening_btn.text = GameSettings.binding_text(_listening)
+		_listening = ""
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Photo mode: P snaps, Esc opens the pause menu.
 	if _photo and event is InputEventKey and event.pressed and not event.echo:
@@ -841,20 +861,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			_photo_to_pause()
 			return
-	# Rebinding a key: capture the next key/button press.
 	if not _listening.is_empty():
-		if event is InputEventKey and event.pressed and not event.echo:
-			get_viewport().set_input_as_handled()
-			if (event as InputEventKey).keycode != KEY_ESCAPE:
-				GameSettings.rebind(_listening, event)
-			_listening_btn.text = GameSettings.binding_text(_listening)
-			_listening = ""
-		elif event is InputEventMouseButton and event.pressed:
-			get_viewport().set_input_as_handled()
-			GameSettings.rebind(_listening, event)
-			_listening_btn.text = GameSettings.binding_text(_listening)
-			_listening = ""
-		return
+		return  # handled in _input
 	# Esc is the universal "back / pause".
 	if event is InputEventKey and event.pressed and not event.echo \
 			and (event as InputEventKey).keycode == KEY_ESCAPE:
