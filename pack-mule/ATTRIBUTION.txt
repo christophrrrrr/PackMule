@@ -1,0 +1,55 @@
+PACK MULE — ASSET ATTRIBUTION
+=============================
+
+3D models sourced from Poly Pizza (https://poly.pizza). Models marked
+[CC-BY] are used under the Creative Commons Attribution 3.0 license
+(https://creativecommons.org/licenses/by/3.0/); the remainder are public
+domain / CC0 from their creators (Quaternius, Kenney, CreativeTrio, etc.).
+
+Refrigerator by sirkitree [CC-BY] — https://poly.pizza/m/1Blv52jDwd1
+Piano by jeremy [CC-BY] — https://poly.pizza/m/7U-93vxPOER
+Couch by CMHT Oculus [CC-BY] — https://poly.pizza/m/aFwNuRNmcO5
+Safe by CreativeTrio — https://poly.pizza/m/N4egHD2Vms
+Traffic Cone by Adam Marc Williams [CC-BY] — https://poly.pizza/m/eFQ60hneKwL
+Tub by sirkitree [CC-BY] — https://poly.pizza/m/4ZzY5vQ_egA
+Rubber Duck by Poly by Google [CC-BY] — https://poly.pizza/m/9pffFcv7LSm
+Washer by Kenney — https://poly.pizza/m/C7HZypH3D6
+Chair by Quaternius — https://poly.pizza/m/iMNqRzPwwe
+Lady Liberty by Anna M [CC-BY] — https://poly.pizza/m/ef9Yd09Doxh
+Donkey by Poly by Google [CC-BY] — https://poly.pizza/m/dv8Isf3WRlE
+Toilet by jeremy [CC-BY] — https://poly.pizza/m/3EU_Af2k03w
+Car by Poly by Google [CC-BY] — https://poly.pizza/m/75h3mi6uHuC
+Cow by Quaternius — https://poly.pizza/m/5XSc2Fka3F
+Table by Hunter Paramore [CC-BY] — https://poly.pizza/m/7qAyGZnerYt
+Rug by Akimkhan [CC-BY] — https://poly.pizza/m/cORwtjCf95
+Trashcan by Poly by Google [CC-BY] — https://poly.pizza/m/fw6F3liNvHQ
+Mountain by Quaternius — https://poly.pizza/m/7HYR2s9JVi
+Cloud by Poly by Google [CC-BY] — https://poly.pizza/m/aQl2tRgDupm
+Fold Out Ladder by Jarlan Perez [CC-BY] — https://poly.pizza/m/0KCcEqA6caU
+Bear by jiang liu [CC-BY] — https://poly.pizza/m/3Eb9oLfZYIc
+Grill by S. Paul Michael [CC-BY] — https://poly.pizza/m/4nORhAGJ6Vt
+Helicopter by Poly by Google [CC-BY] — https://poly.pizza/m/cTzINMr0WdS
+Windmill by Poly by Google [CC-BY] — https://poly.pizza/m/ctIRaIM3zXu
+T-Rex by Poly by Google [CC-BY] — https://poly.pizza/m/9GyZw9gGPMq
+Bird by Poly by Google [CC-BY] — https://poly.pizza/m/8Ph79kHbt9s
+Hot air balloon by Poly by Google [CC-BY] — https://poly.pizza/m/7Fej0Jd3_Di
+Flying saucer by Poly by Google [CC-BY] — https://poly.pizza/m/b0N_HeT_Ttb
+Airship by Poly by Google [CC-BY] — https://poly.pizza/m/dRpj4_t2keh
+Alien by Quaternius — https://poly.pizza/m/sUTLXji0aL
+Eagle by Robert Mirabelle [CC-BY] — https://poly.pizza/m/1Z5L1v0bfu7
+Horse by Poly by Google [CC-BY] — https://poly.pizza/m/f0_m8hH9BI9
+Motorcycle by Poly by Google [CC-BY] — https://poly.pizza/m/dse64pqMKAR
+Anvil by shantoan — https://poly.pizza/m/SsEuXRyLhB
+Kitchen Oven by Bouggles [CC-BY] — https://poly.pizza/m/yc791ltBNS
+Goat by Poly by Google [CC-BY] — https://poly.pizza/m/bNYS7ETDNCt
+Stag by Quaternius — https://poly.pizza/m/tQdzbZ1Cmw
+Bull by Quaternius — https://poly.pizza/m/a8PIIYwF7r
+Elephant by Poly by Google [CC-BY] — https://poly.pizza/m/a27MA0rXyyj
+
+FONT
+----
+Luckiest Guy by Astigmatic — SIL Open Font License.
+
+ENGINE
+------
+Built with the Godot Engine (https://godotengine.org) — MIT License.

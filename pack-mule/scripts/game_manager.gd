@@ -109,6 +109,7 @@ func _ready() -> void:
 	_hud.cash_out_requested.connect(_cash_out)
 	_hud.wheel_landed.connect(_on_wheel_landed)
 	_hud.skin_changed.connect(_apply_saddle)  # live recolor on the menu
+	_hud.base_changed.connect(_rebuild_base)  # live mount swap on the menu
 	if _autostart:
 		_autostart = false
 		_start_game()
@@ -1101,7 +1102,7 @@ func _find_first_mesh(node: Node) -> Mesh:
 ## of the whole body (head, neck, rump — all stackable surfaces), and a
 ## flat red platform sitting on top of the back as the clear primary base.
 func _setup_donkey() -> void:
-	var model: Node3D = (load("res://assets/Donkey.glb") as PackedScene).instantiate()
+	var model: Node3D = (load(ShopCatalog.base_path(GameSettings.get_base())) as PackedScene).instantiate()
 	_donkey_base.add_child(model)
 
 	var points := PackedVector3Array()
@@ -1164,6 +1165,15 @@ func _setup_donkey() -> void:
 	_saddle_t_center = t_center
 	_saddle_back_y = back_y
 	_apply_saddle()
+
+
+## Swaps the base model (mount) live: tears down the donkey body and saddle,
+## then rebuilds from the equipped mount. Menu-only (you can't swap mid-run).
+func _rebuild_base() -> void:
+	for c in _donkey_base.get_children():
+		c.free()
+	_saddle_nodes.clear()
+	_setup_donkey()
 
 
 ## Builds (or rebuilds) the saddle platform — collision plus the colored

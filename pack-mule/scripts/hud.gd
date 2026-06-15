@@ -13,6 +13,7 @@ signal photo_to_pause_requested
 signal cash_out_requested
 signal wheel_landed(modifier: Dictionary)
 signal skin_changed              # the equipped saddle skin changed (live recolor)
+signal base_changed              # the equipped mount changed (live model swap)
 
 # Cartoon palette.
 const CREAM := Color(0.98, 0.96, 0.89)
@@ -66,8 +67,10 @@ var _credits_scroll: Control           # the moving credits roll
 var _credits_y := 0.0
 var _menu_best: Label                   # the menu's best-height / wallet line
 var _shop: CenterContainer
-var _shop_body: HBoxContainer           # the rebuilt item columns
+var _shop_tabs: HBoxContainer           # category tab buttons
+var _shop_body: VBoxContainer           # the rebuilt item rows for the active tab
 var _shop_wallet: Label                 # the shop's live wallet readout
+var _shop_tab := "upgrades"             # active category: upgrades / mounts / skins
 var _listening := ""              # action currently waiting for a new key
 var _listening_btn: Button
 var _bind_buttons := {}
@@ -549,27 +552,54 @@ func _build_credits() -> void:
 	back.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 16)
 
 
-## [font_size, text, color] rows for the credit roll. PLACEHOLDER — replace
-## with the real credits text.
+## [font_size, text, color] rows for the credit roll. Model attributions
+## come from Poly Pizza (CC-BY / CC0); the full text + links live in
+## ATTRIBUTION.txt at the project root.
 func _credits_lines() -> Array:
-	return [
+	var faint := Color(0.8, 0.83, 0.92)
+	var rows := [
 		[64, "PACK MULE", SUNNY],
-		[20, "", CREAM],
-		[28, "A game by", SKY],
+		[22, "Stack ridiculous things. Don't look down.", CREAM],
+		[34, "", CREAM],
+		[26, "DESIGN & CODE", SKY],
 		[24, "Christoph", CREAM],
-		[20, "", CREAM],
-		[28, "Design & Code", SKY],
-		[24, "Christoph", CREAM],
-		[20, "", CREAM],
-		[28, "Art & Sound", SKY],
-		[24, "(your credits here)", CREAM],
-		[20, "", CREAM],
-		[28, "Built with", SKY],
-		[24, "Godot Engine 4.5", CREAM],
-		[24, "Font: Luckiest Guy", CREAM],
-		[40, "", CREAM],
-		[26, "Thanks for playing!", SUNNY],
+		[34, "", CREAM],
+		[26, "BUILT WITH", SKY],
+		[20, "Godot Engine 4.5", CREAM],
+		[20, "Font: Luckiest Guy by Astigmatic", CREAM],
+		[34, "", CREAM],
+		[26, "3D MODELS", SKY],
+		[16, "via Poly Pizza  ·  CC-BY / CC0", faint],
+		[16, "", CREAM],
 	]
+	# name, creator — grouped loosely by what they are.
+	var models := [
+		["Donkey", "Poly by Google"], ["Horse", "Poly by Google"],
+		["Goat", "Poly by Google"], ["Stag", "Quaternius"],
+		["Bull", "Quaternius"], ["Elephant", "Poly by Google"],
+		["Cow", "Quaternius"], ["Bear", "jiang liu"],
+		["Alien", "Quaternius"], ["T-Rex", "Poly by Google"],
+		["Eagle", "Robert Mirabelle"], ["Bird", "Poly by Google"],
+		["Car", "Poly by Google"], ["Motorcycle", "Poly by Google"],
+		["Helicopter", "Poly by Google"], ["Flying Saucer", "Poly by Google"],
+		["Airship", "Poly by Google"], ["Hot Air Balloon", "Poly by Google"],
+		["Refrigerator", "sirkitree"], ["Kitchen Oven", "Bouggles"],
+		["Washer", "Kenney"], ["Couch", "CMHT Oculus"],
+		["Chair", "Quaternius"], ["Table", "Hunter Paramore"],
+		["Rug", "Akimkhan"], ["Toilet", "jeremy"],
+		["Tub", "sirkitree"], ["Trashcan", "Poly by Google"],
+		["Safe", "CreativeTrio"], ["Piano", "jeremy"],
+		["Grill", "S. Paul Michael"], ["Anvil", "shantoan"],
+		["Rubber Duck", "Poly by Google"], ["Fold Out Ladder", "Jarlan Perez"],
+		["Traffic Cone", "Adam Marc Williams"], ["Lady Liberty", "Anna M"],
+		["Windmill", "Poly by Google"], ["Mountain", "Quaternius"],
+		["Cloud", "Poly by Google"],
+	]
+	for m: Array in models:
+		rows.append([18, "%s — %s" % [m[0], m[1]], CREAM])
+	rows.append([40, "", CREAM])
+	rows.append([28, "Thanks for playing!", SUNNY])
+	return rows
 
 
 func _back_to_side(panel: CenterContainer) -> void:
@@ -602,28 +632,39 @@ func _build_shop() -> void:
 	add_child(_shop)
 
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY, 40, 32, 18))
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY, 40, 28, 18))
 	_shop.add_child(panel)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
+	box.add_theme_constant_override("separation", 10)
 	panel.add_child(box)
 
-	var title := _make_label("SHOP", 60, SUNNY)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 24)
+	header.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(header)
+	var title := _make_label("SHOP", 56, SUNNY)
 	title.add_theme_color_override("font_outline_color", INK)
 	title.add_theme_constant_override("outline_size", 10)
-	box.add_child(title)
-
+	header.add_child(title)
 	_shop_wallet = _make_label("", 28, LEAF)
-	_shop_wallet.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(_shop_wallet)
+	_shop_wallet.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	header.add_child(_shop_wallet)
+
+	_shop_tabs = HBoxContainer.new()
+	_shop_tabs.add_theme_constant_override("separation", 12)
+	_shop_tabs.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(_shop_tabs)
 
 	box.add_child(_divider())
 
-	_shop_body = HBoxContainer.new()
-	_shop_body.add_theme_constant_override("separation", 20)
-	_shop_body.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_child(_shop_body)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(720, 420)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	_shop_body = VBoxContainer.new()
+	_shop_body.add_theme_constant_override("separation", 8)
+	_shop_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_shop_body)
 
 	box.add_child(_divider())
 	var back := _make_button("BACK", LEAF)
@@ -631,96 +672,106 @@ func _build_shop() -> void:
 	box.add_child(back)
 
 
-## Fills (or refills) the two shop columns and the wallet readout — called on
-## open and after every purchase / equip so prices and states stay correct.
+## Fills (or refills) the tab bar, the active category's rows, and the wallet
+## readout — called on open and after every purchase / equip / tab switch.
 func _populate_shop() -> void:
-	_shop_wallet.text = "WALLET   $%s" % _money_str(GameSettings.get_wallet())
+	_shop_wallet.text = "WALLET  $%s" % _money_str(GameSettings.get_wallet())
+
+	for c in _shop_tabs.get_children():
+		_shop_tabs.remove_child(c)
+		c.queue_free()
+	for tab: Array in [["upgrades", "UPGRADES"], ["mounts", "MOUNTS"], ["skins", "SKINS"]]:
+		var t := _make_button(tab[1], LEAF if _shop_tab == tab[0] else Color(0.42, 0.45, 0.55))
+		t.add_theme_font_size_override("font_size", 22)
+		t.pressed.connect(func() -> void: _shop_switch_tab(tab[0]))
+		_shop_tabs.add_child(t)
+
 	for c in _shop_body.get_children():
 		_shop_body.remove_child(c)
 		c.queue_free()
-
-	var left := _shop_column("UPGRADES")
-	for item: Dictionary in ShopCatalog.PERKS:
-		left.add_child(_shop_row(item, false))
-	for item: Dictionary in ShopCatalog.BOOSTS:
-		left.add_child(_shop_row(item, false))
-	_shop_body.add_child(left)
-
-	var right := _shop_column("SADDLE SKINS")
-	for item: Dictionary in ShopCatalog.SKINS:
-		right.add_child(_shop_row(item, true))
-	_shop_body.add_child(right)
-
-
-func _shop_column(heading: String) -> VBoxContainer:
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 10)
-	var h := _make_label(heading, 26, SKY)
-	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(h)
-	return col
+	match _shop_tab:
+		"mounts":
+			for item: Dictionary in ShopCatalog.MOUNTS:
+				_shop_body.add_child(_shop_row(item, "mount"))
+		"skins":
+			for item: Dictionary in ShopCatalog.SKINS:
+				_shop_body.add_child(_shop_row(item, "skin"))
+		_:
+			for item: Dictionary in ShopCatalog.PERKS:
+				_shop_body.add_child(_shop_row(item, "perk"))
+			for item: Dictionary in ShopCatalog.BOOSTS:
+				_shop_body.add_child(_shop_row(item, "perk"))
 
 
-## One item card: name + description (or a color swatch for skins) on the
-## left, and an action button (price / OWNED / EQUIP / EQUIPPED) on the right.
-func _shop_row(item: Dictionary, is_skin: bool) -> PanelContainer:
+func _shop_switch_tab(tab: String) -> void:
+	if tab == _shop_tab:
+		return
+	_shop_tab = tab
+	Sfx.play("ding")
+	_populate_shop()
+
+
+## One item card: name + description (and a color swatch for skins) on the
+## left, an action button (price / OWNED / EQUIP / EQUIPPED) on the right.
+## `kind` is "perk", "skin", or "mount".
+func _shop_row(item: Dictionary, kind: String) -> PanelContainer:
 	var id: String = item["id"]
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel",
-			_rounded(Color(1, 1, 1, 0.06), 14, Color(0, 0, 0, 0), 16, 10))
+			_rounded(Color(1, 1, 1, 0.06), 14, Color(0, 0, 0, 0), 16, 8))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	card.add_child(row)
 
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 2)
-	info.custom_minimum_size = Vector2(320, 0)
+	info.custom_minimum_size = Vector2(440, 0)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_child(_make_label(item["name"], 22, CREAM))
 	if item.has("desc"):
 		var desc := _make_label(item["desc"], 15, Color(0.82, 0.85, 0.95))
 		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		desc.custom_minimum_size = Vector2(320, 0)
+		desc.custom_minimum_size = Vector2(440, 0)
 		info.add_child(desc)
-	if is_skin:
+	if kind == "skin":
 		var swatch := ColorRect.new()
 		swatch.color = ShopCatalog.skin_color(id)
-		swatch.custom_minimum_size = Vector2(320, 16)
+		swatch.custom_minimum_size = Vector2(440, 14)
 		info.add_child(swatch)
 	row.add_child(info)
 
-	var btn := _shop_action_button(item, is_skin)
+	var btn := _shop_action_button(item, kind)
 	btn.custom_minimum_size = Vector2(150, 0)
 	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(btn)
 	return card
 
 
-func _shop_action_button(item: Dictionary, is_skin: bool) -> Button:
+func _shop_action_button(item: Dictionary, kind: String) -> Button:
 	var id: String = item["id"]
 	var price: int = int(item["price"])
+	var equipped := (kind == "skin" and GameSettings.get_skin() == id) \
+			or (kind == "mount" and GameSettings.get_base() == id)
+	var equippable := kind == "skin" or kind == "mount"
 	var btn: Button
-	if is_skin:
-		if GameSettings.get_skin() == id:
-			btn = _make_button("EQUIPPED", LEAF)
-			btn.disabled = true
-		elif GameSettings.owns(id):
-			btn = _make_button("EQUIP", SKY)
-			btn.pressed.connect(func() -> void: _shop_equip(id))
-		else:
-			btn = _make_button("$%s" % _money_str(price), SUNNY)
-			btn.pressed.connect(func() -> void: _shop_buy(item, true))
-	elif GameSettings.owns(id):
-		btn = _make_button("OWNED", LEAF)
+	if equippable and equipped:
+		btn = _make_button("EQUIPPED", LEAF)
 		btn.disabled = true
+	elif GameSettings.owns(id):
+		if equippable:
+			btn = _make_button("EQUIP", SKY)
+			btn.pressed.connect(func() -> void: _shop_equip(item, kind))
+		else:
+			btn = _make_button("OWNED", LEAF)
+			btn.disabled = true
 	else:
 		btn = _make_button("$%s" % _money_str(price), SUNNY)
-		btn.pressed.connect(func() -> void: _shop_buy(item, false))
+		btn.pressed.connect(func() -> void: _shop_buy(item, kind))
 	btn.add_theme_font_size_override("font_size", 20)
 	return btn
 
 
-func _shop_buy(item: Dictionary, is_skin: bool) -> void:
+func _shop_buy(item: Dictionary, kind: String) -> void:
 	var id: String = item["id"]
 	if GameSettings.owns(id):
 		return
@@ -728,9 +779,8 @@ func _shop_buy(item: Dictionary, is_skin: bool) -> void:
 		GameSettings.buy(id)
 		Sfx.play("register")
 		Sfx.play("coin")
-		if is_skin:
-			GameSettings.set_skin(id)
-			skin_changed.emit()
+		if kind == "skin" or kind == "mount":
+			_equip(item, kind)
 		_punch(_shop_wallet, 1.2)
 		_populate_shop()
 	else:
@@ -738,11 +788,20 @@ func _shop_buy(item: Dictionary, is_skin: bool) -> void:
 		_punch(_shop_wallet, 1.25)
 
 
-func _shop_equip(id: String) -> void:
-	GameSettings.set_skin(id)
-	skin_changed.emit()
+func _shop_equip(item: Dictionary, kind: String) -> void:
+	_equip(item, kind)
 	Sfx.play("ding")
 	_populate_shop()
+
+
+## Equips a skin or a mount and signals the game manager to update the mule.
+func _equip(item: Dictionary, kind: String) -> void:
+	if kind == "skin":
+		GameSettings.set_skin(item["id"])
+		skin_changed.emit()
+	elif kind == "mount":
+		GameSettings.set_base(item["id"])
+		base_changed.emit()
 
 
 func _process(delta: float) -> void:

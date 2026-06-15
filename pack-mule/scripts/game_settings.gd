@@ -257,9 +257,9 @@ static func spend_wallet(amount: int) -> bool:
 	return true
 
 
-## Owns a perk/boost/skin. The default red saddle is always owned.
+## Owns a perk/boost/skin/mount. The default red saddle and donkey are free.
 static func owns(id: String) -> bool:
-	if id == ShopCatalog.DEFAULT_SKIN:
+	if id == ShopCatalog.DEFAULT_SKIN or id == ShopCatalog.DEFAULT_BASE:
 		return true
 	return bool(_inst._cfg.get_value("shop_items", id, false)) if _inst != null else false
 
@@ -281,6 +281,19 @@ static func set_skin(id: String) -> void:
 	if _inst == null:
 		return
 	_inst._cfg.set_value("shop", "skin", id)
+	_inst._save()
+
+
+static func get_base() -> String:
+	if _inst == null:
+		return ShopCatalog.DEFAULT_BASE
+	return str(_inst._cfg.get_value("shop", "base", ShopCatalog.DEFAULT_BASE))
+
+
+static func set_base(id: String) -> void:
+	if _inst == null:
+		return
+	_inst._cfg.set_value("shop", "base", id)
 	_inst._save()
 
 

@@ -29,6 +29,8 @@ const ENTRIES := [
 	{"name": "Windmill", "path": "res://assets/Windmill.glb", "size": 2.8, "mass": 55.0, "weight": 3.0, "sound": "wood"},
 	{"name": "Alien", "path": "res://assets/Alien.glb", "size": 1.6, "mass": 45.0, "weight": 3.0, "sound": "alien"},
 	{"name": "Flying Saucer", "path": "res://assets/Flying saucer.glb", "size": 2.6, "mass": 100.0, "weight": 2.0, "sound": "metal"},
+	{"name": "Anvil", "path": "res://assets/Anvil.glb", "size": 0.8, "mass": 130.0, "weight": 6.0, "sound": "metal"},
+	{"name": "Kitchen Oven", "path": "res://assets/Kitchen Oven.glb", "size": 1.2, "mass": 70.0, "weight": 7.0, "sound": "metal"},
 ]
 
 

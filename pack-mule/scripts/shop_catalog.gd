@@ -29,6 +29,27 @@ const SKINS := [
 	{"id": "skin_gold", "name": "Gold Rush", "price": 1200},
 ]
 
+## Mounts replace the donkey as the base you stack on. Each is a model that
+## gets normalized and given a saddle platform exactly like the donkey.
+const MOUNTS := [
+	{"id": "base_donkey", "name": "Donkey", "price": 0,
+		"path": "res://assets/Donkey.glb", "desc": "The original pack mule."},
+	{"id": "base_goat", "name": "Mountain Goat", "price": 600,
+		"path": "res://assets/Goat.glb", "desc": "Sure-footed and stubborn."},
+	{"id": "base_horse", "name": "Horse", "price": 800,
+		"path": "res://assets/Horse.glb", "desc": "A longer, steadier back."},
+	{"id": "base_stag", "name": "Stag", "price": 1000,
+		"path": "res://assets/Stag.glb", "desc": "Antlers optional, not load-bearing."},
+	{"id": "base_bull", "name": "Bull", "price": 1200,
+		"path": "res://assets/Bull.glb", "desc": "Broad and unbothered."},
+	{"id": "base_moto", "name": "Motorcycle", "price": 1500,
+		"path": "res://assets/Motorcycle.glb", "desc": "Who needs an animal?"},
+	{"id": "base_elephant", "name": "Elephant", "price": 1800,
+		"path": "res://assets/Elephant.glb", "desc": "The widest platform in the shop."},
+]
+
+const DEFAULT_BASE := "base_donkey"
+
 ## Objects the Exotic Crate makes more common, and the weight multiplier.
 const EXOTIC_NAMES := ["T-Rex", "Helicopter", "Flying Saucer", "Alien", "Bear", "Cow"]
 const EXOTIC_MULT := 4.0
@@ -38,11 +59,19 @@ const DEFAULT_SKIN := "skin_red"
 
 ## The price of any item by id (0 if unknown / free).
 static func price(id: String) -> int:
-	for group: Array in [PERKS, BOOSTS, SKINS]:
+	for group: Array in [PERKS, BOOSTS, SKINS, MOUNTS]:
 		for item: Dictionary in group:
 			if item["id"] == id:
 				return int(item["price"])
 	return 0
+
+
+## The model path for a mount id (the donkey by default).
+static func base_path(id: String) -> String:
+	for item: Dictionary in MOUNTS:
+		if item["id"] == id:
+			return str(item["path"])
+	return "res://assets/Donkey.glb"
 
 
 ## The saddle-blanket color for a skin id.

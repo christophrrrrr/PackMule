@@ -31,11 +31,12 @@ func _process(_dt: float) -> bool:
 
 	# Snapshot the real save so the test leaves no trace.
 	var ids: Array[String] = []
-	for group: Array in [ShopCatalog.PERKS, ShopCatalog.BOOSTS, ShopCatalog.SKINS]:
+	for group: Array in [ShopCatalog.PERKS, ShopCatalog.BOOSTS, ShopCatalog.SKINS, ShopCatalog.MOUNTS]:
 		for item: Dictionary in group:
 			ids.append(item["id"])
 	var w0 := GameSettings.get_wallet()
 	var skin0 := GameSettings.get_skin()
+	var base0 := GameSettings.get_base()
 	var owned0 := {}
 	for id: String in ids:
 		owned0[id] = GameSettings.owns(id)
@@ -61,6 +62,15 @@ func _process(_dt: float) -> bool:
 	GameSettings.set_skin("skin_blue")
 	_check("equip changes skin", GameSettings.get_skin() == "skin_blue")
 
+	# Mounts (base swap).
+	_check("default mount owned", GameSettings.owns(ShopCatalog.DEFAULT_BASE))
+	_check("default mount equipped", GameSettings.get_base() == ShopCatalog.DEFAULT_BASE)
+	_check("mount not owned yet", not GameSettings.owns("base_horse"))
+	GameSettings.buy("base_horse")
+	GameSettings.set_base("base_horse")
+	_check("buy + equip mount", GameSettings.owns("base_horse") and GameSettings.get_base() == "base_horse")
+	_check("mount path resolves", ShopCatalog.base_path("base_horse") == "res://assets/Horse.glb")
+
 	# Perks resolved at run start.
 	GameSettings.buy("reinforced")
 	GameSettings.buy("exotic")
@@ -85,8 +95,9 @@ func _process(_dt: float) -> bool:
 	GameSettings.reset_shop()
 	GameSettings.set_wallet(w0)
 	GameSettings.set_skin(skin0)
+	GameSettings.set_base(base0)
 	for id: String in ids:
-		if owned0[id] and id != ShopCatalog.DEFAULT_SKIN:
+		if owned0[id] and id != ShopCatalog.DEFAULT_SKIN and id != ShopCatalog.DEFAULT_BASE:
 			GameSettings.buy(id)
 
 	print("[shoptest] done: %d failure(s)" % _fails)

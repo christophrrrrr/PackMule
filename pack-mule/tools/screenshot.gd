@@ -51,7 +51,12 @@ func _process(_delta: float) -> bool:
 	if _frames == 8 and "credits" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_credits()
 	if _frames == 8 and "shop" in OS.get_cmdline_user_args():
-		(root.get_node("Main/HUD") as GameHud)._open_shop()
+		var sh := root.get_node("Main/HUD") as GameHud
+		if "mounts" in OS.get_cmdline_user_args():
+			sh._shop_tab = "mounts"
+		elif "skins" in OS.get_cmdline_user_args():
+			sh._shop_tab = "skins"
+		sh._open_shop()
 	if _frames == 8 and "settings" in OS.get_cmdline_user_args():
 		(root.get_node("Main/HUD") as GameHud)._open_settings()
 	if _frames == 8 and "galleryview" in OS.get_cmdline_user_args():
