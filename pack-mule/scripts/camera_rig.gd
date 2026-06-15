@@ -6,6 +6,7 @@ extends Node3D
 ## wheel adjusts fly speed. (Esc is handled by the HUD: it pauses.)
 
 const LOOK_SENSITIVITY := 0.0035
+const DEFAULT_SPEED := 8.0
 const MIN_SPEED := 2.0
 const MAX_SPEED := 50.0
 const SPEED_STEP := 1.25
@@ -22,9 +23,9 @@ const START_LOOK_AT := Vector3(0.0, 1.0, 0.0)
 const BOUND_RADIUS := 35.0
 const BOUND_MIN_Y := -6.0
 const BOUND_MAX_Y := 55.0
-const AVOID_RADIUS := 1.2
+const AVOID_RADIUS := 0.6
 
-var _speed := 8.0
+var _speed := DEFAULT_SPEED
 var _yaw := 0.0
 var _pitch := 0.0
 var _shake := 0.0
@@ -45,7 +46,12 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	# Only act on input while flying (cursor captured). On the menu the cursor
+	# is visible, and an unguarded wheel here used to silently change the fly
+	# speed before a run even started.
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		return
+	if event is InputEventMouseMotion:
 		_yaw -= event.relative.x * LOOK_SENSITIVITY
 		_pitch = clampf(_pitch - event.relative.y * LOOK_SENSITIVITY, -MAX_PITCH, MAX_PITCH)
 		rotation = Vector3(_pitch, _yaw, 0.0)
@@ -115,6 +121,13 @@ func _blocked(p: Vector3) -> bool:
 	q.transform = Transform3D(Basis.IDENTITY, p)
 	q.collision_mask = 1 | 2  # static world (mountain/donkey/ground) + objects
 	return not space.intersect_shape(q, 1).is_empty()
+
+
+## Reset the fly speed to its default at the start of a run, so every run
+## begins at the same pace regardless of any earlier wheel scrolling.
+func reset_flight() -> void:
+	_speed = DEFAULT_SPEED
+	_shake = 0.0
 
 
 ## Kick the camera; bigger amount = bigger jolt. Used for impacts/collapses.

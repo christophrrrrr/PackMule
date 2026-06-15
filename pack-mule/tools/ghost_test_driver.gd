@@ -6,16 +6,28 @@ extends Node
 
 var _frames := 0
 var _fails := 0
+var _phase := 0
+var _base0 := ""
 
 @onready var _gm: Node = get_tree().root.get_node("Main")
 
 
 func _physics_process(_delta: float) -> void:
 	_frames += 1
-	if _frames < 10:
+	# Phase 0: force the donkey base so the saddle geometry is deterministic
+	# (the assertions assume the donkey; the player may have equipped a mount).
+	if _phase == 0 and _frames >= 10:
+		_base0 = GameSettings.get_base()
+		if _base0 != ShopCatalog.DEFAULT_BASE:
+			GameSettings.set_base(ShopCatalog.DEFAULT_BASE)
+			_gm._rebuild_base()
+		_phase = 1
+		_frames = 0
 		return
-	set_physics_process(false)
-	_run()
+	# Phase 1: let the rebuilt base register with the physics server.
+	if _phase == 1 and _frames >= 10:
+		set_physics_process(false)
+		_run()
 
 
 func _check(label: String, ok: bool) -> void:
@@ -74,5 +86,6 @@ func _run() -> void:
 	_check("tipped place_on fits", fits)
 	_check("tipped place_on clear", not ghost.overlaps(space))
 
+	GameSettings.set_base(_base0)  # restore the player's equipped mount
 	print("[ghosttest] done: %d failure(s)" % _fails)
 	get_tree().quit(1 if _fails > 0 else 0)

@@ -23,10 +23,10 @@ const BOOSTS := [
 
 const SKINS := [
 	{"id": "skin_red", "name": "Classic Red", "price": 0},
-	{"id": "skin_blue", "name": "Royal Blue", "price": 300},
-	{"id": "skin_green", "name": "Racing Green", "price": 400},
-	{"id": "skin_pink", "name": "Bubblegum", "price": 400},
-	{"id": "skin_gold", "name": "Gold Rush", "price": 1200},
+	{"id": "skin_blue", "name": "Royal Blue", "price": 1500},
+	{"id": "skin_green", "name": "Racing Green", "price": 2500},
+	{"id": "skin_pink", "name": "Bubblegum", "price": 2500},
+	{"id": "skin_gold", "name": "Gold Rush", "price": 6000},
 ]
 
 ## Mounts replace the donkey as the base you stack on. Each is a model that
@@ -34,17 +34,17 @@ const SKINS := [
 const MOUNTS := [
 	{"id": "base_donkey", "name": "Donkey", "price": 0,
 		"path": "res://assets/Donkey.glb", "desc": "The original pack mule."},
-	{"id": "base_goat", "name": "Mountain Goat", "price": 600,
+	{"id": "base_goat", "name": "Mountain Goat", "price": 2500,
 		"path": "res://assets/Goat.glb", "desc": "Sure-footed and stubborn."},
-	{"id": "base_horse", "name": "Horse", "price": 800,
+	{"id": "base_horse", "name": "Horse", "price": 3500,
 		"path": "res://assets/Horse.glb", "desc": "A longer, steadier back."},
-	{"id": "base_stag", "name": "Stag", "price": 1000,
+	{"id": "base_stag", "name": "Stag", "price": 5000,
 		"path": "res://assets/Stag.glb", "desc": "Antlers optional, not load-bearing."},
-	{"id": "base_bull", "name": "Bull", "price": 1200,
+	{"id": "base_bull", "name": "Bull", "price": 6500,
 		"path": "res://assets/Bull.glb", "desc": "Broad and unbothered."},
-	{"id": "base_moto", "name": "Motorcycle", "price": 1500,
+	{"id": "base_moto", "name": "Motorcycle", "price": 8000,
 		"path": "res://assets/Motorcycle.glb", "desc": "Who needs an animal?"},
-	{"id": "base_elephant", "name": "Elephant", "price": 1800,
+	{"id": "base_elephant", "name": "Elephant", "price": 10000,
 		"path": "res://assets/Elephant.glb", "desc": "The widest platform in the shop."},
 ]
 

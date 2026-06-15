@@ -128,6 +128,7 @@ func _start_game() -> void:
 		return
 	_started = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_camera_rig.reset_flight()      # every run starts at the same fly speed
 	_camera_rig.set_process(true)
 	_record = GameSettings.get_record()
 	_event_milestone = 0

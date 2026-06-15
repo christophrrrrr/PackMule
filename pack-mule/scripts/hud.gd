@@ -70,7 +70,7 @@ var _shop: CenterContainer
 var _shop_tabs: HBoxContainer           # category tab buttons
 var _shop_body: VBoxContainer           # the rebuilt item rows for the active tab
 var _shop_wallet: Label                 # the shop's live wallet readout
-var _shop_tab := "upgrades"             # active category: upgrades / mounts / skins
+var _shop_tab := "mounts"               # active category: mounts / skins
 var _listening := ""              # action currently waiting for a new key
 var _listening_btn: Button
 var _bind_buttons := {}
@@ -680,7 +680,7 @@ func _populate_shop() -> void:
 	for c in _shop_tabs.get_children():
 		_shop_tabs.remove_child(c)
 		c.queue_free()
-	for tab: Array in [["upgrades", "UPGRADES"], ["mounts", "MOUNTS"], ["skins", "SKINS"]]:
+	for tab: Array in [["mounts", "MOUNTS"], ["skins", "SKINS"]]:
 		var t := _make_button(tab[1], LEAF if _shop_tab == tab[0] else Color(0.42, 0.45, 0.55))
 		t.add_theme_font_size_override("font_size", 22)
 		t.pressed.connect(func() -> void: _shop_switch_tab(tab[0]))
@@ -689,18 +689,12 @@ func _populate_shop() -> void:
 	for c in _shop_body.get_children():
 		_shop_body.remove_child(c)
 		c.queue_free()
-	match _shop_tab:
-		"mounts":
-			for item: Dictionary in ShopCatalog.MOUNTS:
-				_shop_body.add_child(_shop_row(item, "mount"))
-		"skins":
-			for item: Dictionary in ShopCatalog.SKINS:
-				_shop_body.add_child(_shop_row(item, "skin"))
-		_:
-			for item: Dictionary in ShopCatalog.PERKS:
-				_shop_body.add_child(_shop_row(item, "perk"))
-			for item: Dictionary in ShopCatalog.BOOSTS:
-				_shop_body.add_child(_shop_row(item, "perk"))
+	if _shop_tab == "skins":
+		for item: Dictionary in ShopCatalog.SKINS:
+			_shop_body.add_child(_shop_row(item, "skin"))
+	else:
+		for item: Dictionary in ShopCatalog.MOUNTS:
+			_shop_body.add_child(_shop_row(item, "mount"))
 
 
 func _shop_switch_tab(tab: String) -> void:
@@ -711,33 +705,34 @@ func _shop_switch_tab(tab: String) -> void:
 	_populate_shop()
 
 
-## One item card: name + description (and a color swatch for skins) on the
-## left, an action button (price / OWNED / EQUIP / EQUIPPED) on the right.
-## `kind` is "perk", "skin", or "mount".
+## One item card: a picture on the left, name + description in the middle, and
+## an action button (price / OWNED / EQUIP / EQUIPPED) on the right.
+## `kind` is "skin" or "mount".
 func _shop_row(item: Dictionary, kind: String) -> PanelContainer:
 	var id: String = item["id"]
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel",
-			_rounded(Color(1, 1, 1, 0.06), 14, Color(0, 0, 0, 0), 16, 8))
+			_rounded(Color(1, 1, 1, 0.06), 14, Color(0, 0, 0, 0), 14, 8))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	card.add_child(row)
 
+	if kind == "mount":
+		row.add_child(_model_thumb(item["path"]))
+	else:
+		row.add_child(_skin_swatch(ShopCatalog.skin_color(id)))
+
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 2)
-	info.custom_minimum_size = Vector2(440, 0)
+	info.custom_minimum_size = Vector2(330, 0)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	info.add_child(_make_label(item["name"], 22, CREAM))
 	if item.has("desc"):
 		var desc := _make_label(item["desc"], 15, Color(0.82, 0.85, 0.95))
 		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		desc.custom_minimum_size = Vector2(440, 0)
+		desc.custom_minimum_size = Vector2(330, 0)
 		info.add_child(desc)
-	if kind == "skin":
-		var swatch := ColorRect.new()
-		swatch.color = ShopCatalog.skin_color(id)
-		swatch.custom_minimum_size = Vector2(440, 14)
-		info.add_child(swatch)
 	row.add_child(info)
 
 	var btn := _shop_action_button(item, kind)
@@ -745,6 +740,58 @@ func _shop_row(item: Dictionary, kind: String) -> PanelContainer:
 	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(btn)
 	return card
+
+
+## A small live 3D preview of a model (its own world + light + framed camera),
+## used as the picture for a mount.
+func _model_thumb(path: String) -> Control:
+	var holder := TextureRect.new()
+	holder.custom_minimum_size = Vector2(92, 92)
+	holder.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+
+	var vp := SubViewport.new()
+	vp.size = Vector2i(128, 128)
+	vp.transparent_bg = true
+	vp.own_world_3d = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	holder.add_child(vp)
+
+	var sun := DirectionalLight3D.new()
+	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(35.0), 0.0)
+	sun.light_energy = 1.3
+	vp.add_child(sun)
+
+	var stage := Node3D.new()
+	var model: Node3D = (load(path) as PackedScene).instantiate()
+	stage.add_child(model)
+	var pts := PackedVector3Array()
+	StackableObject.collect_hull_points(model, Transform3D.IDENTITY, pts)
+	if not pts.is_empty():
+		var aabb := StackableObject.points_aabb(pts)
+		var longest := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+		model.scale = Vector3.ONE * (1.7 / maxf(longest, 0.001))
+		model.position = -aabb.get_center() * model.scale
+	stage.rotation.y = deg_to_rad(35.0)  # three-quarter view
+	vp.add_child(stage)
+
+	var cam := Camera3D.new()
+	# look_at needs the node in-tree; set the transform directly instead.
+	cam.look_at_from_position(Vector3(0.0, 0.7, 2.4), Vector3.ZERO, Vector3.UP)
+	vp.add_child(cam)
+
+	holder.texture = vp.get_texture()
+	return holder
+
+
+## A rounded color blanket used as the picture for a saddle skin.
+func _skin_swatch(color: Color) -> Control:
+	var holder := CenterContainer.new()
+	holder.custom_minimum_size = Vector2(92, 92)
+	var blanket := PanelContainer.new()
+	blanket.custom_minimum_size = Vector2(80, 56)
+	blanket.add_theme_stylebox_override("panel", _rounded(color, 12, color.darkened(0.35)))
+	holder.add_child(blanket)
+	return holder
 
 
 func _shop_action_button(item: Dictionary, kind: String) -> Button:
