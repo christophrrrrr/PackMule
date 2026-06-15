@@ -52,6 +52,17 @@ func _process(_dt: float) -> bool:
 	_gm._cash_out()
 	_check("cashing an empty pot is a no-op", _gm._banked == before)
 
+	# Can't cash while a piece is mid-fall (the exploit fix).
+	var faller := StackableObject.create(ObjectCatalog.ENTRIES[0])
+	_gm.add_child(faller)
+	faller.drop()  # -> FALLING
+	_check("tower not at rest while a piece falls", not _gm._tower_at_rest())
+	_gm._pending = 100
+	var b2: int = _gm._banked
+	_gm._cash_out()
+	_check("cash out blocked while a piece is falling", _gm._banked == b2)
+	faller.queue_free()
+
 	print("[cashtest] done: %d failure(s)" % _fails)
 	quit(1 if _fails > 0 else 0)
 	return true

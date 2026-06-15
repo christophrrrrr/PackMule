@@ -178,6 +178,7 @@ func _build_in_game_hud() -> void:
 	_cashout = _make_label("", 22, INK)
 	_cashout.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_cashout_box.add_child(_cashout)
+	_cashout_box.modulate = Color(1, 1, 1, 0.4)  # dimmed until banking is allowed
 	add_child(_cashout_box)
 
 	_incoming_box = PanelContainer.new()
@@ -224,6 +225,12 @@ func set_pending(pending: int, mult: float) -> void:
 	_cashout.text = "CASH OUT  $%s\n×%s   [%s]" % [
 			_money_str(pending), _mult_str(mult), GameSettings.binding_text("pm_cashout")]
 	_punch(_cashout_box, 1.12)
+
+
+## Dim the cash-out pill when banking isn't allowed (pieces still falling,
+## or nothing to bank) so it's clear it's only available between placements.
+func set_cashout_ready(ready: bool) -> void:
+	_cashout_box.modulate = Color(1, 1, 1, 1.0) if ready else Color(1, 1, 1, 0.4)
 
 
 ## Cash out! Count the banked money up to its new total and punch it.

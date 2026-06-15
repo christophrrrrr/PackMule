@@ -49,6 +49,20 @@ func _ensure_buses() -> void:
 			var i := AudioServer.bus_count - 1
 			AudioServer.set_bus_name(i, n)
 			AudioServer.set_bus_send(i, "Master")
+			if n == "SFX":
+				# Even out the loudness gap between sound files: a compressor
+				# pulls the loud ones down toward the quiet ones, and a limiter
+				# catches any remaining peaks so nothing clips.
+				var comp := AudioEffectCompressor.new()
+				comp.threshold = -16.0
+				comp.ratio = 4.0
+				comp.attack_us = 25.0
+				comp.release_ms = 160.0
+				comp.gain = 4.0
+				AudioServer.add_bus_effect(i, comp)
+				var lim := AudioEffectLimiter.new()
+				lim.ceiling_db = -1.0
+				AudioServer.add_bus_effect(i, lim)
 
 
 func _apply_audio() -> void:

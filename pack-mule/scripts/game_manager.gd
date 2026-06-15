@@ -51,6 +51,7 @@ var _banked := 0                 # money already cashed out (safe; this is your 
 var _pending := 0                # earned-but-not-cashed money (lost on collapse)
 var _streak := 0                 # objects placed since the last cash out
 var _multiplier := 1.0           # current multiplier (climbs per piece, resets on cash)
+var _cash_ready := false         # cash out currently allowed (tower at rest, pot > 0)
 var _strikes := 0
 var _ghost: GhostPreview
 var _settling: StackableObject
@@ -169,9 +170,26 @@ func _physics_process(delta: float) -> void:
 	if _integrity_timer >= INTEGRITY_INTERVAL:
 		_integrity_timer = 0.0
 		_check_integrity()
+	# Cash out is only offered when the tower is settled and you're about to
+	# place the next piece — never while things are still falling (which would
+	# let you bank right before a collapse registers).
+	var ready := _phase == Phase.AIMING and _pending > 0 and _tower_at_rest()
+	if ready != _cash_ready:
+		_cash_ready = ready
+		_hud.set_cashout_ready(ready)
 	if _phase != Phase.AIMING or _ghost == null:
 		return
 	_update_ghost()
+
+
+## True when nothing is in motion — no placed piece is still falling or
+## settling. Cashing out and the readiness of the cash-out prompt depend on it.
+func _tower_at_rest() -> bool:
+	for child in get_children():
+		var obj := child as StackableObject
+		if obj != null and obj.state == StackableObject.State.FALLING:
+			return false
+	return true
 
 
 ## Nothing may ever float: a glued piece only stays glued while an
@@ -623,9 +641,9 @@ func _refresh_hud() -> void:
 ## Cash out: bank the pending pot into your safe money and reset the
 ## multiplier to ×1 — the run keeps going. Always available mid-run.
 func _cash_out() -> void:
-	if _phase != Phase.AIMING and _phase != Phase.SETTLING:
-		return
-	if _pending <= 0:
+	# Only between placements, with the tower fully at rest — you can't bank
+	# while pieces are mid-fall (that was the exploit).
+	if _phase != Phase.AIMING or _pending <= 0 or not _tower_at_rest():
 		return
 	var amount := _pending
 	_banked += amount
