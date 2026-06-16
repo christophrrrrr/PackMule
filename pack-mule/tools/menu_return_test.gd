@@ -33,8 +33,14 @@ func _process(_dt: float) -> bool:
 	var dummy := StackableObject.create(ObjectCatalog.ENTRIES[0])
 	_gm.add_child(dummy)
 	var donkey_kids := _gm.get_node("DonkeyBase").get_child_count()
+	# Open the pause menu first — leaving to the main menu must not leave it up.
+	var hud := _gm.get_node("HUD")
+	hud._toggle_pause()
 
 	_gm._go_to_menu()
+
+	_check("pause panel not lingering",
+			hud._pause == null or not hud._pause.visible)
 
 	_check("returns to MENU phase", _gm._phase == GameManager.Phase.MENU)
 	_check("run no longer started", not _gm._started)

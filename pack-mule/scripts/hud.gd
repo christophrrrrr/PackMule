@@ -374,6 +374,13 @@ func show_main_menu() -> void:
 		_build_main_menu()
 	if _side == null:
 		_build_side_buttons()
+	# Make sure nothing lingers on top of the menu — e.g. the pause panel when
+	# you choose Main Menu from a paused run, or the game-over panel.
+	_paused = false
+	_wheel.visible = false  # in case a spin was on screen when leaving a run
+	for panel in [_pause, _settings, _gallery, _shop, _howto, _credits, _odds, _game_over]:
+		if panel != null:
+			panel.visible = false
 	set_in_game_hud_visible(false)
 	_menu_best.text = _menu_best_text()  # wallet may have grown since last shown
 	refresh_daily()

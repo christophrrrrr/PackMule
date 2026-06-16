@@ -21,6 +21,14 @@ func _process(_delta: float) -> bool:
 	if _frames == 12 and "pause" in OS.get_cmdline_user_args():
 		(root.get_node("Main") as GameManager)._start_game()
 		(root.get_node("Main/HUD") as GameHud)._toggle_pause()
+	if "pausemenu" in OS.get_cmdline_user_args():
+		var gm := root.get_node("Main") as GameManager
+		if _frames == 6:
+			gm._start_game()
+		if _frames == 12:
+			(root.get_node("Main/HUD") as GameHud)._toggle_pause()
+		if _frames == 20:
+			gm._go_to_menu()  # leave to the menu; pause panel must be gone
 	if _frames == 6 and "birds" in OS.get_cmdline_user_args():
 		var gm := root.get_node("Main") as GameManager
 		gm._start_game()
