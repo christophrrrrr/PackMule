@@ -174,12 +174,37 @@ func _reset_run_state() -> void:
 	_pending_golden = false
 
 
+## Main Menu button: fade out, switch to the menu in place, fade in.
 func _to_main_menu() -> void:
-	await _hud.fade_out()  # cover the scene rebuild (the one real hitch)
+	await _hud.fade_out()
+	_go_to_menu()
+	_hud.fade_in()
+
+
+## Return to the main menu IN PLACE — reloading the scene rebuilt the whole
+## world (mountain, clouds, peaks, donkey) and flashed a gray gap for ~1s.
+## The menu is just a state over the existing world, so reuse it: clear the
+## tower, reset, and show the menu. Instant. (Sync so tools can call it.)
+func _go_to_menu() -> void:
 	get_tree().paused = false
 	Engine.time_scale = 1.0
-	_autostart = false
-	get_tree().reload_current_scene()
+	for c in get_children():
+		if c is StackableObject:
+			c.free()
+	if _ghost != null:
+		_ghost.free()
+		_ghost = null
+	_hud.hide_game_over()
+	_started = false
+	_phase = Phase.MENU
+	_reset_run_state()
+	_camera_rig.reset_view()
+	_camera_rig.set_process(false)  # menu: the peak sits as a static backdrop
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Sfx.stop_wind()
+	_hud.set_in_run(false)
+	_hud.set_in_game_hud_visible(false)
+	_hud.show_main_menu()
 
 
 ## Photo mode: the scene freezes (tree paused) but the camera can fly so the
