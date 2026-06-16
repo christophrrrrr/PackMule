@@ -13,12 +13,10 @@ config_version=5
 config/name="PackMule"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
-config/icon="res://icon.png"
-config/windows_native_icon="res://icon.ico"
 boot_splash/bg_color=Color(0.36, 0.74, 1, 1)
 boot_splash/image="res://boot_splash.png"
-boot_splash/fullsize=true
-boot_splash/use_filter=true
+config/icon="res://icon.png"
+config/windows_native_icon="res://icon.ico"
 
 [gui]
 
@@ -28,3 +26,7 @@ theme/custom_font="res://assets/LuckiestGuy-Regular.ttf"
 
 common/physics_ticks_per_second=120
 3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
