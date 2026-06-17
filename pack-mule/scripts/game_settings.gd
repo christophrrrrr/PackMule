@@ -329,3 +329,14 @@ static func reset_shop() -> void:
 		if _inst._cfg.has_section(section):
 			_inst._cfg.erase_section(section)
 	_inst._save()
+
+
+# --- Platform ----------------------------------------------------------------
+
+## True on a touchscreen build (Android/iOS), which swaps the free-fly camera
+## and click-to-place for an orbit camera and on-screen buttons. Reads only
+## OS feature tags, so it works before the GameSettings instance exists and in
+## --script tool runs. Passing `mobile` as a user cmdline arg forces it on for
+## testing the touch path on desktop (e.g. `godot ... -- mobile`).
+static func is_mobile() -> bool:
+	return OS.has_feature("mobile") or "mobile" in OS.get_cmdline_user_args()

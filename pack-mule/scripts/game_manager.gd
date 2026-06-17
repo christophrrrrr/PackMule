@@ -71,6 +71,7 @@ var _integrity_timer := 0.0
 var _placed_count := 0           # objects the player has stacked this run
 var _total_weight := 0.0         # combined mass the mule has carried (kg)
 var _started := false            # the run has begun (past the main menu)
+var _is_mobile := false          # touch build: orbit camera + on-screen buttons
 var _event_milestone := 0        # highest 10 m mark that has fired an event
 var _record := 0.0               # best height ever (loaded from settings)
 var _beat_record := false        # this run has already surpassed the record
@@ -94,6 +95,7 @@ const GOLDEN_CHANCE := 0.01      # 1% of objects spawn golden (cosmetic)
 
 func _ready() -> void:
 	Engine.time_scale = 1.0       # a previous run froze the scene for its photo
+	_is_mobile = GameSettings.is_mobile()
 	add_child(GameSettings.new()) # audio buses + remappable input actions (before Sfx)
 	add_child(Sfx.new())          # the procedural sound bank (Sfx.play(...))
 	_rng.randomize()
@@ -109,6 +111,10 @@ func _ready() -> void:
 	_hud.wheel_landed.connect(_on_wheel_landed)
 	_hud.skin_changed.connect(_apply_saddle)  # live recolor on the menu
 	_hud.base_changed.connect(_rebuild_base)  # live mount swap on the menu
+	# Mobile on-screen buttons fire the same actions as the keyboard/mouse.
+	_hud.place_requested.connect(_try_place)
+	_hud.tip_requested.connect(_try_tip)
+	_hud.spin_requested.connect(_try_spin)
 	_warm_assets()                # preload object meshes so play has no hitch
 	if _autostart:
 		_autostart = false
@@ -116,9 +122,16 @@ func _ready() -> void:
 	else:
 		# Wait on the main menu; the peak sits in the background as a backdrop.
 		_phase = Phase.MENU
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		_set_cursor(Input.MOUSE_MODE_VISIBLE)
 		_camera_rig.set_process(false)
 		_hud.show_main_menu()
+
+
+## Desktop captures the cursor during a run and frees it for menus; a
+## touchscreen has no cursor, so these calls are skipped on mobile.
+func _set_cursor(mode: Input.MouseMode) -> void:
+	if not _is_mobile:
+		Input.mouse_mode = mode
 
 
 ## PLAY button: fade to black, begin the run, fade back in. (_start_game stays
@@ -135,7 +148,7 @@ func _start_game() -> void:
 	if _started:
 		return
 	_started = true
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_set_cursor(Input.MOUSE_MODE_CAPTURED)
 	_camera_rig.reset_flight()      # every run starts at the same fly speed
 	_camera_rig.set_process(true)
 	_reset_run_state()
@@ -200,7 +213,7 @@ func _go_to_menu() -> void:
 	_reset_run_state()
 	_camera_rig.reset_view()
 	_camera_rig.set_process(false)  # menu: the peak sits as a static backdrop
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_set_cursor(Input.MOUSE_MODE_VISIBLE)
 	Sfx.stop_wind()
 	_hud.set_in_run(false)
 	_hud.set_in_game_hud_visible(false)
@@ -218,7 +231,7 @@ func _enter_photo_mode() -> void:
 	if _ghost != null:
 		_ghost.visible = false  # no blueprint in the photo
 	_camera_rig.process_mode = Node.PROCESS_MODE_ALWAYS  # fly while paused
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_set_cursor(Input.MOUSE_MODE_CAPTURED)
 
 
 ## Photo mode -> pause menu (camera freezes again; HUD shows the menu).
@@ -256,10 +269,13 @@ func _on_restart() -> void:
 func _process(delta: float) -> void:
 	if _phase != Phase.AIMING or _ghost == null:
 		return
-	if Input.is_action_pressed("pm_rotate_left"):
-		_ghost.spin(YAW_SPEED * delta)
-	if Input.is_action_pressed("pm_rotate_right"):
-		_ghost.spin(-YAW_SPEED * delta)
+	# Desktop holds Q/E; mobile holds the on-screen rotate buttons (rotate_dir
+	# is +1 left / -1 right / 0). Same continuous spin either way.
+	var spin_dir := _hud.rotate_dir() if _is_mobile else \
+			(1.0 if Input.is_action_pressed("pm_rotate_left") else 0.0) \
+			- (1.0 if Input.is_action_pressed("pm_rotate_right") else 0.0)
+	if spin_dir != 0.0:
+		_ghost.spin(spin_dir * YAW_SPEED * delta)
 
 
 func _physics_process(delta: float) -> void:
@@ -356,25 +372,44 @@ func _unhandled_input(event: InputEvent) -> void:
 			_hud.start_photo_mode()
 		return
 	if event.is_action_pressed("pm_spin"):
-		# One spin per object: the wheel unlocks again once the modified
-		# object has been placed. Spinning while one settles is fine — the
-		# result lands on the next object. Only during an active run.
-		if (_phase == Phase.AIMING or _phase == Phase.SETTLING) \
-				and _pending_mod.is_empty() and not _hud.wheel_busy():
-			_hud.spin_wheel()
+		_try_spin()
 		return
 	if _phase != Phase.AIMING or _ghost == null:
 		return
 	if event.is_action_pressed("pm_place"):
-		if _ghost.visible and _ghost.valid:
-			_place_object(_ghost.entry, _ghost.global_transform)
+		_try_place()
 	elif event.is_action_pressed("pm_tip"):
-		# Tip the object 90 degrees around the camera's horizontal axis,
-		# so "R" always tips it left/right as seen on screen.
-		var axis := _camera.global_transform.basis.x
-		axis.y = 0.0
-		axis = axis.normalized() if axis.length() > 0.01 else Vector3.RIGHT
-		_ghost.tip(axis, PI / 2.0)
+		_try_tip()
+
+
+## Place the current ghost where it is aiming, if that spot is valid. Driven by
+## the place action (LMB) on desktop and the PLACE button on mobile.
+func _try_place() -> void:
+	if _phase != Phase.AIMING or _ghost == null:
+		return
+	if _ghost.visible and _ghost.valid:
+		_place_object(_ghost.entry, _ghost.global_transform)
+
+
+## Tip the object 90° around the camera's horizontal axis, so it always tips
+## left/right as seen on screen. Driven by R on desktop, the TIP button on mobile.
+func _try_tip() -> void:
+	if _phase != Phase.AIMING or _ghost == null:
+		return
+	var axis := _camera.global_transform.basis.x
+	axis.y = 0.0
+	axis = axis.normalized() if axis.length() > 0.01 else Vector3.RIGHT
+	_ghost.tip(axis, PI / 2.0)
+
+
+## Spin the modifier wheel. One spin per object: the wheel unlocks again once
+## the modified object has been placed. Spinning while one settles is fine — the
+## result lands on the next object. Driven by Tab on desktop, the SPIN button
+## on mobile. Only during an active run.
+func _try_spin() -> void:
+	if (_phase == Phase.AIMING or _phase == Phase.SETTLING) \
+			and _pending_mod.is_empty() and not _hud.wheel_busy():
+		_hud.spin_wheel()
 
 
 ## The wheel result applies to the current object instantly (the ghost is
@@ -400,9 +435,12 @@ func _on_wheel_landed(modifier: Dictionary) -> void:
 ## the bare ground or when no clear pose exists nearby.
 func _update_ghost() -> void:
 	var viewport := get_viewport()
-	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-	_hud.set_crosshair(captured)
-	var mouse := viewport.get_visible_rect().size / 2.0 if captured \
+	# Aim from the screen center while flying (cursor captured) or on mobile
+	# (the orbit camera always targets dead center); otherwise follow the freed
+	# cursor. The crosshair shows whenever we aim from center.
+	var center_aim := _is_mobile or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	_hud.set_crosshair(center_aim)
+	var mouse := viewport.get_visible_rect().size / 2.0 if center_aim \
 			else viewport.get_mouse_position()
 	var from := _camera.project_ray_origin(mouse)
 	var dir := _camera.project_ray_normal(mouse)
@@ -813,10 +851,12 @@ func _cash_out() -> void:
 
 
 func _refresh_modifier_label() -> void:
-	if _pending_mod.is_empty():
-		_hud.set_modifier("Modifier: -   (Tab: spin the wheel)")
-	else:
+	if not _pending_mod.is_empty():
 		_hud.set_modifier("Modifier: %s   (locked on this object)" % _pending_mod["name"])
+	elif _is_mobile:
+		_hud.set_modifier("Modifier: -   (SPIN to roll)")
+	else:
+		_hud.set_modifier("Modifier: -   (Tab: spin the wheel)")
 
 
 func _refresh_incoming(entry: Dictionary) -> void:
@@ -847,7 +887,7 @@ func _game_over(reason: String) -> void:
 	_camera_rig.set_physics_process(false)
 	_hud.set_in_game_hud_visible(false)
 	var photo := await _capture_tower_photo()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # so the buttons are clickable
+	_set_cursor(Input.MOUSE_MODE_VISIBLE)  # so the buttons are clickable
 	var is_record := _max_height > _record
 	GameSettings.set_record(maxf(_record, _max_height))
 	GameSettings.set_score_record(maxi(GameSettings.get_score_record(), _banked))

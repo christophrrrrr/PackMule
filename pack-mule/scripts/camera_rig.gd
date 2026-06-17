@@ -1,9 +1,15 @@
 class_name CameraRig
 extends Node3D
 
-## Always-on free-fly camera: the mouse looks around (cursor captured),
-## WASD flies, Space rises, Ctrl descends, Shift sprints, and the mouse
-## wheel adjusts fly speed. (Esc is handled by the HUD: it pauses.)
+## Two camera modes, chosen at startup by GameSettings.is_mobile():
+##  • Desktop — always-on free-fly: the mouse looks around (cursor captured),
+##    WASD flies, Space rises, Ctrl descends, Shift sprints, the wheel sets
+##    fly speed. (Esc is handled by the HUD: it pauses.)
+##  • Mobile — touch free-fly: a fixed on-screen joystick (bottom-left, owned
+##    by the HUD) flies you toward where you look (push up = forward, so look up
+##    to rise and down to descend; left/right strafes), and dragging anywhere
+##    else looks around. It mirrors the desktop free-fly, so it reaches every
+##    surface too.
 
 const LOOK_SENSITIVITY := 0.0035
 const DEFAULT_SPEED := 8.0
@@ -25,23 +31,60 @@ const BOUND_MIN_Y := -6.0
 const BOUND_MAX_Y := 55.0
 const AVOID_RADIUS := 0.6
 
+# --- Mobile (touch free-fly) — tunable after an on-device test ---------------
+const TOUCH_LOOK_SENS := 0.006     # look drag -> yaw/pitch, radians per pixel
+const TOUCH_MOVE_SPEED := 9.0      # joystick fly speed, meters/second
+
 var _speed := DEFAULT_SPEED
 var _yaw := 0.0
 var _pitch := 0.0
 var _shake := 0.0
 var _avoid := SphereShape3D.new()
 
+# Mobile state (only used when _is_mobile).
+var _is_mobile := false
+var _look_index := -1              # the touch index currently driving the look
+var _hud: Node = null              # polled each frame for the move-joystick vector
+
 @onready var _camera: Camera3D = $Camera3D
 
 
 func _ready() -> void:
+	_is_mobile = GameSettings.is_mobile()
+	_hud = get_parent().get_node_or_null("HUD")
 	_avoid.radius = AVOID_RADIUS
 	reset_view()
 	# The game manager owns the mouse mode (the main menu needs a visible
-	# cursor); it captures the mouse when the run starts.
+	# cursor); it captures the mouse when the run starts. On mobile there is
+	# no cursor and input arrives as touch events handled below.
+
+
+## Touch look: a drag anywhere outside the joystick/buttons rotates the view
+## (yaw + pitch), exactly like the desktop mouse-look. Only the first such
+## finger drives it, so the left thumb on the joystick never fights it.
+func _handle_touch(event: InputEvent) -> void:
+	# Ignore touches outside of an active run (the menu camera is a static
+	# backdrop; the rig stops processing then).
+	if not is_processing():
+		return
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			if _look_index == -1:
+				_look_index = touch.index
+		elif touch.index == _look_index:
+			_look_index = -1
+	elif event is InputEventScreenDrag and (event as InputEventScreenDrag).index == _look_index:
+		var drag := event as InputEventScreenDrag
+		_yaw -= drag.relative.x * TOUCH_LOOK_SENS
+		_pitch = clampf(_pitch - drag.relative.y * TOUCH_LOOK_SENS, -MAX_PITCH, MAX_PITCH)
+		rotation = Vector3(_pitch, _yaw, 0.0)
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _is_mobile:
+		_handle_touch(event)
+		return
 	# Only act on input while flying (cursor captured). On the menu the cursor
 	# is visible, and an unguarded wheel here used to silently change the fly
 	# speed before a run even started.
@@ -59,6 +102,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if _is_mobile:
+		_mobile_fly(delta)
+		_update_shake(delta)
+		return
 	var dir := Vector3.ZERO
 	var b := transform.basis
 	if Input.is_action_pressed("pm_forward"):
@@ -83,7 +130,31 @@ func _process(delta: float) -> void:
 		_try_move(Vector3(move.x, 0.0, 0.0), stuck)
 		_try_move(Vector3(0.0, move.y, 0.0), stuck)
 		_try_move(Vector3(0.0, 0.0, move.z), stuck)
-	# Screen shake: jitter the camera, decaying back to centered.
+	_update_shake(delta)
+
+
+## Fly from the on-screen joystick: push toward where you look. Stick Y drives
+## forward/back along the view (look up + forward = rise, down = descend); stick
+## X strafes. Same bubble bounds and solid-avoidance as the desktop fly.
+func _mobile_fly(delta: float) -> void:
+	if _hud == null:
+		return
+	var stick: Vector2 = _hud.move_vector() if _hud.has_method("move_vector") else Vector2.ZERO
+	var vert: float = _hud.vert_dir() if _hud.has_method("vert_dir") else 0.0
+	var b := transform.basis
+	var dir := -b.z * stick.y + b.x * stick.x + Vector3.UP * vert
+	if dir.length() < 0.001:
+		return
+	var move := dir.limit_length(1.0) * TOUCH_MOVE_SPEED * delta
+	var stuck := _blocked(position)
+	_try_move(Vector3(move.x, 0.0, 0.0), stuck)
+	_try_move(Vector3(0.0, move.y, 0.0), stuck)
+	_try_move(Vector3(0.0, 0.0, move.z), stuck)
+
+
+## Screen shake: jitter the camera child, decaying back to centered. Shared by
+## both camera modes (it only touches the Camera3D's local offset).
+func _update_shake(delta: float) -> void:
 	if _shake > 0.001:
 		_camera.position = Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0),
 				randf_range(-1.0, 1.0)) * _shake
@@ -142,6 +213,7 @@ func reset_view() -> void:
 	# Reset the child fully — it only ever carries the shake offset otherwise.
 	_camera.position = Vector3.ZERO
 	_camera.rotation = Vector3.ZERO
+	_look_index = -1
 	reset_flight()
 
 

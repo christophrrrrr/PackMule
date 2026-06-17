@@ -18,9 +18,16 @@ boot_splash/image="res://boot_splash.png"
 config/icon="res://icon.png"
 config/windows_native_icon="res://icon.ico"
 
+[display]
+
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation="landscape"
+
 [gui]
 
 theme/custom_font="res://assets/LuckiestGuy-Regular.ttf"
+common/default_scroll_deadzone=10
 
 [physics]
 
@@ -30,3 +37,4 @@ common/physics_ticks_per_second=120
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

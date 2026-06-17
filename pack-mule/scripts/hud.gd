@@ -14,6 +14,9 @@ signal cash_out_requested
 signal wheel_landed(modifier: Dictionary)
 signal skin_changed              # the equipped saddle skin changed (live recolor)
 signal base_changed              # the equipped mount changed (live model swap)
+signal place_requested           # mobile PLACE button (mirrors LMB)
+signal tip_requested             # mobile TIP button (mirrors R)
+signal spin_requested            # mobile SPIN button (mirrors Tab)
 
 # Cartoon palette.
 const CREAM := Color(0.98, 0.96, 0.89)
@@ -25,6 +28,10 @@ const LEAF := Color(0.42, 0.80, 0.36)
 const TANGERINE := Color(1.0, 0.55, 0.21)
 
 const HINT_TEXT := "WASD + MOUSE TO FLY   ·   Q / E ROTATE   ·   R TIP   ·   LMB PLACE   ·   TAB SPIN WHEEL   ·   C PHOTO   ·   ESC PAUSE"
+const MOBILE_HINT_TEXT := "LEFT STICK: FLY   ·   DRAG THE SCREEN: LOOK AROUND"
+const JOY_SIZE := 220             # virtual joystick base diameter (px)
+const JOY_KNOB := 96              # joystick knob diameter (px)
+const JOY_RADIUS := 62.0          # how far the knob travels from center: (SIZE-KNOB)/2
 const POSTCARD_SIZE := Vector2i(1024, 686)  # photo area below is 16:9
 const PC_PAD := 22
 const PC_CAPTION_H := 88
@@ -81,6 +88,18 @@ var _pause: CenterContainer
 var _in_run := false              # a run is active (pausable)
 var _paused := false
 
+# Mobile on-screen controls (touch build only).
+var _is_mobile := false
+var _mobile_controls: Control     # holder for the in-run touch buttons
+var _mobile_photo: Control        # SNAP / DONE overlay shown in photo mode
+var _cash_btn: Button             # cash-out button (enabled when banking is ready)
+var _rot_dir := 0.0               # held rotate buttons: +1 left / -1 right / 0
+var _vert_dir := 0.0              # held up/down buttons: +1 up / -1 down / 0
+var _joy_base: Panel              # fixed move joystick (bottom-left)
+var _joy_knob: Panel              # the draggable knob
+var _joy_active := -1             # touch index driving the stick (-2 = mouse, desktop test)
+var _joy_vec := Vector2.ZERO      # current stick vector, x=right y=up(forward), -1..1
+
 # Odds, overlays, photo mode.
 var _odds: CenterContainer
 var _odds_pct := {}               # entry name -> percent Label
@@ -109,10 +128,19 @@ func _ready() -> void:
 	# The HUD keeps running while the tree is paused so the pause menu works;
 	# the wheel still pauses with the game.
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_is_mobile = GameSettings.is_mobile()
 	_game_over.visible = false
 	_wheel.process_mode = Node.PROCESS_MODE_PAUSABLE
 	_wheel.landed.connect(func(modifier: Dictionary) -> void: wheel_landed.emit(modifier))
 	_build_in_game_hud()
+	if _is_mobile:
+		_crosshair.add_theme_font_size_override("font_size", 30)  # easier to see on a phone
+		# The readouts are non-interactive on mobile; let touches pass through to
+		# the orbit camera so a drag started anywhere (even on the crosshair or a
+		# readout panel) still rotates the view. Only the buttons capture taps.
+		for node in [_stats_box, _incoming_box, _hint_box, _cashout_box, _crosshair]:
+			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_build_mobile_controls()
 	_build_overlays()
 	_build_fade()
 	fade_in()  # every scene starts black and fades in (hides reload hitches)
@@ -240,7 +268,8 @@ func _build_in_game_hud() -> void:
 	_cashout_box.anchor_right = 1.0
 	_cashout_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_cashout_box.offset_left = -16
-	_cashout_box.offset_top = 14
+	# On mobile the pause button sits in the top-right corner; drop the pot below it.
+	_cashout_box.offset_top = 96 if _is_mobile else 14
 	_cashout_box.offset_right = -16
 	_cashout = _make_label("", 22, INK)
 	_cashout.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -268,7 +297,7 @@ func _build_in_game_hud() -> void:
 	_hint_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_hint_box.offset_top = -38
 	_hint_box.offset_bottom = -8
-	var hint := _make_label(HINT_TEXT, 14, CREAM)
+	var hint := _make_label(MOBILE_HINT_TEXT if _is_mobile else HINT_TEXT, 14, CREAM)
 	_hint_box.add_child(hint)
 	add_child(_hint_box)
 
@@ -287,10 +316,15 @@ func set_money(banked: int) -> void:
 	_money.text = "$%s" % _money_str(banked)
 
 
-## The cash-out pill: what you'd bank now and the live multiplier.
+## The cash-out pill: what you'd bank now and the live multiplier. On mobile
+## it's a readout (the action lives on the CASH OUT button), so it's labelled
+## POT and drops the keyboard hint; on desktop it shows the cash-out key.
 func set_pending(pending: int, mult: float) -> void:
-	_cashout.text = "CASH OUT  $%s\n×%s   [%s]" % [
-			_money_str(pending), _mult_str(mult), GameSettings.binding_text("pm_cashout")]
+	if _is_mobile:
+		_cashout.text = "POT  $%s\n×%s" % [_money_str(pending), _mult_str(mult)]
+	else:
+		_cashout.text = "CASH OUT  $%s\n×%s   [%s]" % [
+				_money_str(pending), _mult_str(mult), GameSettings.binding_text("pm_cashout")]
 	_punch(_cashout_box, 1.12)
 
 
@@ -298,6 +332,8 @@ func set_pending(pending: int, mult: float) -> void:
 ## or nothing to bank) so it's clear it's only available between placements.
 func set_cashout_ready(ready: bool) -> void:
 	_cashout_box.modulate = Color(1, 1, 1, 1.0) if ready else Color(1, 1, 1, 0.4)
+	if _cash_btn != null:
+		_cash_btn.disabled = not ready
 
 
 ## Cash out! Count the banked money up to its new total and punch it.
@@ -363,8 +399,284 @@ func set_crosshair(shown: bool) -> void:
 
 ## Hides every in-game readout so the tower photo is captured clean.
 func set_in_game_hud_visible(shown: bool) -> void:
-	for node in [_stats_box, _incoming_box, _hint_box, _crosshair, _cashout_box]:
-		node.visible = shown
+	for node in [_stats_box, _incoming_box, _hint_box, _crosshair, _cashout_box,
+			_mobile_controls]:
+		if node != null:
+			node.visible = shown
+	if not shown and _is_mobile:
+		_release_joy()  # don't keep flying while the cluster is hidden
+		_rot_dir = 0.0
+		_vert_dir = 0.0
+
+
+# --- Mobile on-screen controls ----------------------------------------------
+
+## How far the held rotate buttons are turning the ghost: +1 left, -1 right, 0
+## none. Polled each frame by the game manager (mirrors holding Q/E).
+func rotate_dir() -> float:
+	return _rot_dir
+
+
+## How the held up/down buttons drive vertical fly: +1 up, -1 down, 0 none.
+## Polled by the camera rig each frame.
+func vert_dir() -> float:
+	return _vert_dir
+
+
+## Builds the in-run touch controls: a big PLACE plus rotate/tip on the right
+## (right thumb), spin/cash-out on the left (left thumb), and a pause button in
+## the top-right corner. The holder ignores the mouse so drags on empty space
+## still reach the orbit camera; only the buttons themselves capture taps.
+func _build_mobile_controls() -> void:
+	_mobile_controls = Control.new()
+	_mobile_controls.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_mobile_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_mobile_controls.visible = false
+	add_child(_mobile_controls)
+
+	# Right thumb: big PLACE in the corner, rotate/tip in a row just above it.
+	var place := _make_button("PLACE", LEAF)
+	place.custom_minimum_size = Vector2(240, 150)
+	place.add_theme_font_size_override("font_size", 44)
+	place.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	place.offset_left = -264
+	place.offset_top = -174
+	place.offset_right = -24
+	place.offset_bottom = -24
+	place.pressed.connect(func() -> void: place_requested.emit())
+	_mobile_controls.add_child(place)
+
+	var right_row := HBoxContainer.new()
+	right_row.add_theme_constant_override("separation", 14)
+	right_row.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	right_row.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	right_row.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	right_row.offset_left = -264
+	right_row.offset_top = -320
+	right_row.offset_right = -24
+	right_row.offset_bottom = -186
+	_mobile_controls.add_child(right_row)
+	# Curved (rotation) arrows so it's clear these spin the OBJECT, not move you.
+	var rot_l := _icon_button(SKY, "spin_ccw")
+	rot_l.button_down.connect(func() -> void: _rot_dir = 1.0)
+	rot_l.button_up.connect(func() -> void: _rot_dir = 0.0)
+	right_row.add_child(rot_l)
+	var rot_r := _icon_button(SKY, "spin_cw")
+	rot_r.button_down.connect(func() -> void: _rot_dir = -1.0)
+	rot_r.button_up.connect(func() -> void: _rot_dir = 0.0)
+	right_row.add_child(rot_r)
+	var tip := _round_touch_button("TIP", TANGERINE)
+	tip.pressed.connect(func() -> void: tip_requested.emit())
+	right_row.add_child(tip)
+
+	# Top center (under the INCOMING banner): cash out + spin. Keeping them off
+	# the bottom-left leaves that whole side free for the left-hand move drag.
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 16)
+	top_row.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	top_row.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	top_row.offset_top = 78
+	_mobile_controls.add_child(top_row)
+	_cash_btn = _make_button("CASH OUT", SUNNY)
+	_cash_btn.custom_minimum_size = Vector2(200, 78)
+	_cash_btn.disabled = true
+	_cash_btn.pressed.connect(func() -> void: cash_out_requested.emit())
+	top_row.add_child(_cash_btn)
+	var spin := _make_button("SPIN", Color(0.78, 0.5, 1.0))
+	spin.custom_minimum_size = Vector2(160, 78)
+	spin.pressed.connect(func() -> void: spin_requested.emit())
+	top_row.add_child(spin)
+
+	# Top-right corner: pause.
+	var pause := _make_button("PAUSE", Color(0.5, 0.5, 0.58))
+	pause.custom_minimum_size = Vector2(150, 72)
+	pause.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	pause.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	pause.offset_left = -166
+	pause.offset_top = 14
+	pause.offset_right = -16
+	pause.pressed.connect(_toggle_pause)
+	_mobile_controls.add_child(pause)
+
+	# Bottom-left: a fixed virtual joystick to fly around. It captures its own
+	# touch (the rest of the screen is the look drag, handled by the camera rig).
+	_joy_base = Panel.new()
+	_joy_base.add_theme_stylebox_override("panel",
+			_rounded(Color(0.1, 0.12, 0.2, 0.4), JOY_SIZE / 2, Color(1, 1, 1, 0.45)))
+	_joy_base.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_joy_base.grow_horizontal = Control.GROW_DIRECTION_END
+	_joy_base.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_joy_base.offset_left = 40
+	_joy_base.offset_top = -(JOY_SIZE + 40)
+	_joy_base.offset_right = JOY_SIZE + 40
+	_joy_base.offset_bottom = -40
+	_joy_base.gui_input.connect(_on_joystick_input)
+	_mobile_controls.add_child(_joy_base)
+	_joy_knob = Panel.new()
+	_joy_knob.add_theme_stylebox_override("panel",
+			_rounded(Color(0.95, 0.97, 1.0, 0.8), JOY_KNOB / 2, Color(0, 0, 0, 0.3)))
+	_joy_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE  # visual only
+	_joy_knob.size = Vector2(JOY_KNOB, JOY_KNOB)
+	_joy_base.add_child(_joy_knob)
+	_release_joy()  # center the knob
+
+	# Just right of the joystick: straight up / down fly buttons (held).
+	var vert_col := VBoxContainer.new()
+	vert_col.add_theme_constant_override("separation", 12)
+	vert_col.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	vert_col.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	vert_col.offset_left = JOY_SIZE + 60
+	vert_col.offset_bottom = -78
+	_mobile_controls.add_child(vert_col)
+	var up_btn := _icon_button(Color(0.5, 0.6, 0.78), "up")
+	up_btn.button_down.connect(func() -> void: _vert_dir = 1.0)
+	up_btn.button_up.connect(func() -> void: _vert_dir = 0.0)
+	vert_col.add_child(up_btn)
+	var down_btn := _icon_button(Color(0.5, 0.6, 0.78), "down")
+	down_btn.button_down.connect(func() -> void: _vert_dir = -1.0)
+	down_btn.button_up.connect(func() -> void: _vert_dir = 0.0)
+	vert_col.add_child(down_btn)
+
+	# Photo-mode overlay (separate, since the cluster above is hidden in photo
+	# mode): SNAP on the right, DONE on the left. Without these a touch player
+	# would be stuck — there is no [P]/[Esc] to snap or leave.
+	_mobile_photo = Control.new()
+	_mobile_photo.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_mobile_photo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_mobile_photo.visible = false
+	add_child(_mobile_photo)
+	var snap := _make_button("SNAP", LEAF)
+	snap.custom_minimum_size = Vector2(220, 110)
+	snap.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	snap.offset_left = -244
+	snap.offset_top = -134
+	snap.offset_right = -24
+	snap.offset_bottom = -24
+	snap.pressed.connect(_snap_photo)
+	_mobile_photo.add_child(snap)
+	var done := _make_button("DONE", Color(0.5, 0.5, 0.58))
+	done.custom_minimum_size = Vector2(220, 110)
+	done.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	done.offset_left = 24
+	done.offset_top = -134
+	done.offset_right = 244
+	done.offset_bottom = -24
+	done.pressed.connect(_photo_to_pause)
+	_mobile_photo.add_child(done)
+
+
+## A chunky square touch button for the rotate/tip/pause cluster.
+func _round_touch_button(text: String, color: Color) -> Button:
+	var btn := _make_button(text, color)
+	btn.custom_minimum_size = Vector2(96, 96)
+	return btn
+
+
+## A chunky square button whose face is a vector icon (no font glyphs, so it
+## renders identically everywhere). `kind`: spin_ccw / spin_cw (curved rotation
+## arrows) or up / down (movement triangles).
+func _icon_button(color: Color, kind: String) -> Button:
+	var btn := _make_button("", color)
+	btn.custom_minimum_size = Vector2(96, 96)
+	var icon := Control.new()
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE  # the button under it takes the press
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	icon.draw.connect(_draw_icon.bind(icon, kind))
+	btn.add_child(icon)
+	return btn
+
+
+func _draw_icon(icon: Control, kind: String) -> void:
+	var sz := icon.size
+	if sz.x < 1.0:
+		return
+	var c := sz * 0.5
+	if kind == "up" or kind == "down":
+		var s := minf(sz.x, sz.y) * 0.24
+		var up := kind == "up"
+		var tip_y := -s if up else s    # screen y is down: up = tip above center
+		var base_y := s if up else -s
+		icon.draw_colored_polygon(PackedVector2Array([
+				c + Vector2(0.0, tip_y),
+				c + Vector2(-s, base_y),
+				c + Vector2(s, base_y)]), INK)
+		return
+	# Curved rotation arrow: a ~250° arc with an arrowhead at the leading tip.
+	var cw := kind == "spin_cw"
+	var r := minf(sz.x, sz.y) * 0.26
+	var w := maxf(4.0, r * 0.32)
+	var a0 := deg_to_rad(140.0)
+	var a1 := deg_to_rad(140.0 + 250.0)
+	icon.draw_arc(c, r, a0, a1, 48, INK, w, true)
+	var ang := a1 if cw else a0
+	var dirsign := 1.0 if cw else -1.0
+	var on := c + Vector2(cos(ang), sin(ang)) * r
+	var tang := Vector2(-sin(ang), cos(ang)) * dirsign
+	var perp := Vector2(-tang.y, tang.x)
+	var hs := r * 0.85
+	icon.draw_colored_polygon(PackedVector2Array([
+			on + tang * hs,
+			on + perp * hs * 0.55,
+			on - perp * hs * 0.55]), INK)
+
+
+## Let touch drags fall through a subtree (labels, panels) to an ancestor
+## ScrollContainer, so a list scrolls even when the finger starts on a row —
+## buttons keep MOUSE_FILTER_STOP so taps still register. Mobile scroll fix.
+func _pass_touches(node: Node) -> void:
+	if node is Control and not (node is BaseButton):
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_PASS
+	for c in node.get_children():
+		_pass_touches(c)
+
+
+# --- Move joystick (mobile) --------------------------------------------------
+
+## The current stick vector, polled by the camera rig each frame: x = right,
+## y = up/forward, each in -1..1. Zero when the stick isn't being touched.
+func move_vector() -> Vector2:
+	return _joy_vec
+
+
+## Drives the joystick from its own touches (real multitouch, so the look drag
+## on the rest of the screen runs at the same time). Falls back to the mouse
+## only on a non-touch device, for testing the touch build on desktop.
+func _on_joystick_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		var t := event as InputEventScreenTouch
+		if t.pressed and _joy_active == -1:
+			_joy_active = t.index
+			_set_joy_knob(t.position)
+		elif not t.pressed and t.index == _joy_active:
+			_release_joy()
+	elif event is InputEventScreenDrag and (event as InputEventScreenDrag).index == _joy_active:
+		_set_joy_knob((event as InputEventScreenDrag).position)
+	elif not DisplayServer.is_touchscreen_available():
+		if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			if (event as InputEventMouseButton).pressed and _joy_active == -1:
+				_joy_active = -2
+				_set_joy_knob((event as InputEventMouseButton).position)
+			elif not (event as InputEventMouseButton).pressed and _joy_active == -2:
+				_release_joy()
+		elif event is InputEventMouseMotion and _joy_active == -2:
+			_set_joy_knob((event as InputEventMouseMotion).position)
+
+
+## Moves the knob to a base-local point (clamped to the ring) and updates the
+## stick vector. Screen Y is down, so it's flipped: dragging up = forward (+y).
+func _set_joy_knob(local_pos: Vector2) -> void:
+	var center := Vector2(JOY_SIZE, JOY_SIZE) * 0.5
+	var off := (local_pos - center).limit_length(JOY_RADIUS)
+	_joy_knob.position = center + off - Vector2(JOY_KNOB, JOY_KNOB) * 0.5
+	_joy_vec = Vector2(off.x, -off.y) / JOY_RADIUS
+
+
+## Recenter the knob and stop movement (finger up, or the HUD was hidden).
+func _release_joy() -> void:
+	_joy_active = -1
+	_joy_vec = Vector2.ZERO
+	if _joy_knob != null:
+		_joy_knob.position = (Vector2(JOY_SIZE, JOY_SIZE) - Vector2(JOY_KNOB, JOY_KNOB)) * 0.5
 
 
 # --- Main menu ---------------------------------------------------------------
@@ -424,16 +736,19 @@ func _build_main_menu() -> void:
 	_menu.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_menu)
 
+	# Tighten the menu on a phone so the whole panel (down to QUIT) fits the
+	# shorter landscape screen — smaller title, padding, and row spacing.
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY, 80, 64, 18))
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY,
+			56 if _is_mobile else 80, 28 if _is_mobile else 64, 18))
 	_menu.add_child(panel)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 20)
+	box.add_theme_constant_override("separation", 12 if _is_mobile else 20)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	panel.add_child(box)
 
-	var title := _make_label("PACK MULE", 104, SUNNY)
+	var title := _make_label("PACK MULE", 64 if _is_mobile else 104, SUNNY)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_outline_color", INK)
 	title.add_theme_constant_override("outline_size", 18)
@@ -483,9 +798,12 @@ func _build_main_menu() -> void:
 	quit.pressed.connect(func() -> void: get_tree().quit())
 	box.add_child(quit)
 
-	var controls := _make_label(HINT_TEXT, 15, Color(0.8, 0.83, 0.92))
-	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(controls)
+	# Desktop shows the keyboard cheat-sheet here; on mobile it's irrelevant
+	# (and the controls are on-screen), so it's dropped to save vertical space.
+	if not _is_mobile:
+		var controls := _make_label(HINT_TEXT, 15, Color(0.8, 0.83, 0.92))
+		controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(controls)
 
 
 ## A thin accent divider line for menu panels.
@@ -538,20 +856,42 @@ func _build_howto() -> void:
 	box.add_theme_constant_override("separation", 14)
 	panel.add_child(box)
 
-	var title := _make_label("HOW TO PLAY", 60, SKY)
+	var title := _make_label("HOW TO PLAY", 44 if _is_mobile else 60, SKY)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_outline_color", INK)
 	title.add_theme_constant_override("outline_size", 10)
 	box.add_child(title)
 	box.add_child(_divider())
 
-	box.add_child(_howto_line("GOAL", "Stack the most ridiculous tower you can on the mule's red saddle. The higher you go, the more it's worth.", SUNNY))
-	box.add_child(_howto_line("FLY & PLACE", "WASD + mouse to fly. Aim with the crosshair, Q/E to spin, R to tip, Left-Click to place. Objects glue where they land.", LEAF))
-	box.add_child(_howto_line("THE WHEEL", "Press Tab to spin for a modifier (Tiny, Massive, Heavy, Slippery, Super Glue...). It applies to the next object.", TANGERINE))
-	box.add_child(_howto_line("CASH & MULTIPLIER", "Every piece you place pays out at a multiplier that climbs the longer you go (×1, ×1.5, ×2, ×3...). Press Enter to CASH OUT: bank the money and reset the multiplier to ×1.", SUNNY))
-	box.add_child(_howto_line("DON'T COLLAPSE", "If 3 objects fall, the run ends and you lose any money you hadn't cashed out. Bank often, or push your luck!", Color(1.0, 0.5, 0.45)))
-	box.add_child(_howto_line("SPEND IT", "Banked cash carries over into your WALLET. Spend it in the SHOP on perks, a spawn booster, and saddle skins for your mule.", LEAF))
-	box.add_child(_howto_line("EXTRAS", "C: photo mode  ·  Esc: pause. A golden item is a rare treat, and the tower's a record to beat.", SKY))
+	var move_line := "RIGHT side: drag to aim (swing & tilt).  LEFT side: drag to move around and raise/lower.  Pinch to zoom.  < / > spin it, TIP tips it, PLACE drops it. Objects glue where they land." \
+			if _is_mobile \
+			else "WASD + mouse to fly. Aim with the crosshair, Q/E to spin, R to tip, Left-Click to place. Objects glue where they land."
+	var wheel_line := "Tap SPIN for a modifier (Tiny, Massive, Heavy, Slippery, Super Glue...). It applies to the next object." \
+			if _is_mobile \
+			else "Press Tab to spin for a modifier (Tiny, Massive, Heavy, Slippery, Super Glue...). It applies to the next object."
+	var cash_verb := "Tap CASH OUT" if _is_mobile else "Press Enter"
+	var extras_line := "A golden item is a rare treat, and the tower's a record to beat." \
+			if _is_mobile \
+			else "C: photo mode  ·  Esc: pause. A golden item is a rare treat, and the tower's a record to beat."
+	var lines := VBoxContainer.new()
+	lines.add_theme_constant_override("separation", 14)
+	lines.add_child(_howto_line("GOAL", "Stack the most ridiculous tower you can on the mule's red saddle. The higher you go, the more it's worth.", SUNNY))
+	lines.add_child(_howto_line("MOVE & PLACE", move_line, LEAF))
+	lines.add_child(_howto_line("THE WHEEL", wheel_line, TANGERINE))
+	lines.add_child(_howto_line("CASH & MULTIPLIER", "Every piece you place pays out at a multiplier that climbs the longer you go (×1, ×1.5, ×2, ×3...). %s to bank the money and reset the multiplier to ×1." % cash_verb, SUNNY))
+	lines.add_child(_howto_line("DON'T COLLAPSE", "If 3 objects fall, the run ends and you lose any money you hadn't cashed out. Bank often, or push your luck!", Color(1.0, 0.5, 0.45)))
+	lines.add_child(_howto_line("SPEND IT", "Banked cash carries over into your WALLET. Spend it in the SHOP on new mounts and saddle skins for your mule.", LEAF))
+	lines.add_child(_howto_line("EXTRAS", extras_line, SKY))
+	if _is_mobile:
+		# Bounded, scrollable body so the title and BACK button stay on-screen.
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.custom_minimum_size = Vector2(760, 360)
+		scroll.add_child(lines)
+		_pass_touches(lines)  # drags scroll even when they start on the text
+		box.add_child(scroll)
+	else:
+		box.add_child(lines)
 
 	box.add_child(_divider())
 	var back := _make_button("BACK", LEAF)
@@ -701,7 +1041,8 @@ func _build_shop() -> void:
 	add_child(_shop)
 
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY, 40, 28, 18))
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 36, SUNNY,
+			32 if _is_mobile else 40, 18 if _is_mobile else 28, 18))
 	_shop.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
@@ -711,7 +1052,7 @@ func _build_shop() -> void:
 	header.add_theme_constant_override("separation", 24)
 	header.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(header)
-	var title := _make_label("SHOP", 56, SUNNY)
+	var title := _make_label("SHOP", 40 if _is_mobile else 56, SUNNY)
 	title.add_theme_color_override("font_outline_color", INK)
 	title.add_theme_constant_override("outline_size", 10)
 	header.add_child(title)
@@ -727,7 +1068,8 @@ func _build_shop() -> void:
 	box.add_child(_divider())
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(720, 420)
+	# Shorter on mobile so the title, tabs, and BACK all fit the landscape screen.
+	scroll.custom_minimum_size = Vector2(720, 300 if _is_mobile else 420)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(scroll)
 	_shop_body = VBoxContainer.new()
@@ -808,6 +1150,8 @@ func _shop_row(item: Dictionary, kind: String) -> PanelContainer:
 	btn.custom_minimum_size = Vector2(150, 0)
 	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(btn)
+	if _is_mobile:
+		_pass_touches(card)  # let a drag on the card scroll the list (button still taps)
 	return card
 
 
@@ -951,19 +1295,22 @@ func _build_gallery() -> void:
 	add_child(_gallery)
 
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SKY, 28, 24))
+	panel.add_theme_stylebox_override("panel", _rounded(PANEL_BG, 30, SKY,
+			24 if _is_mobile else 28, 14 if _is_mobile else 24))
 	_gallery.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	panel.add_child(box)
 
-	var title := _make_label("TOWER GALLERY", 40, SKY)
+	var title := _make_label("TOWER GALLERY", 32 if _is_mobile else 40, SKY)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 
+	# Smaller photo on mobile so the nav + BACK row stays on the short screen.
+	var photo_w := 460.0 if _is_mobile else 620.0
 	_gallery_photo = TextureRect.new()
-	_gallery_photo.custom_minimum_size = Vector2(620, 620 * POSTCARD_SIZE.y / POSTCARD_SIZE.x)
+	_gallery_photo.custom_minimum_size = Vector2(photo_w, photo_w * POSTCARD_SIZE.y / POSTCARD_SIZE.x)
 	_gallery_photo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_gallery_photo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	box.add_child(_gallery_photo)
@@ -1180,30 +1527,34 @@ func _build_settings() -> void:
 	mute.toggled.connect(func(on: bool) -> void: GameSettings.set_muted(on))
 	box.add_child(mute)
 
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 8)
-	box.add_child(gap)
-	box.add_child(_make_label("CONTROLS", 22, SUNNY))
-	box.add_child(_make_label("CLICK A KEY, THEN PRESS THE NEW ONE  ·  ESC CANCELS", 13, Color(0.8, 0.83, 0.92)))
+	# Key rebinding is desktop-only — a touch build has no keyboard, and tapping a
+	# rebind row would just wait for a key that never comes (or capture an
+	# emulated mouse button). Hide the whole CONTROLS block on mobile.
+	if not _is_mobile:
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(0, 8)
+		box.add_child(gap)
+		box.add_child(_make_label("CONTROLS", 22, SUNNY))
+		box.add_child(_make_label("CLICK A KEY, THEN PRESS THE NEW ONE  ·  ESC CANCELS", 13, Color(0.8, 0.83, 0.92)))
 
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.custom_minimum_size = Vector2(430, 200)
-	box.add_child(scroll)
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 16)
-	grid.add_theme_constant_override("v_separation", 6)
-	scroll.add_child(grid)
-	for b in GameSettings.BINDS:
-		var action: String = b[0]
-		grid.add_child(_make_label(String(b[1]), 16, CREAM))
-		var btn := _make_button(GameSettings.binding_text(action), Color(0.32, 0.34, 0.5))
-		btn.add_theme_font_size_override("font_size", 16)
-		btn.add_theme_color_override("font_color", CREAM)
-		btn.pressed.connect(_begin_listen.bind(action, btn))
-		_bind_buttons[action] = btn
-		grid.add_child(btn)
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.custom_minimum_size = Vector2(430, 200)
+		box.add_child(scroll)
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 16)
+		grid.add_theme_constant_override("v_separation", 6)
+		scroll.add_child(grid)
+		for b in GameSettings.BINDS:
+			var action: String = b[0]
+			grid.add_child(_make_label(String(b[1]), 16, CREAM))
+			var btn := _make_button(GameSettings.binding_text(action), Color(0.32, 0.34, 0.5))
+			btn.add_theme_font_size_override("font_size", 16)
+			btn.add_theme_color_override("font_color", CREAM)
+			btn.pressed.connect(_begin_listen.bind(action, btn))
+			_bind_buttons[action] = btn
+			grid.add_child(btn)
 
 	var gap2 := Control.new()
 	gap2.custom_minimum_size = Vector2(0, 8)
@@ -1216,9 +1567,10 @@ func _build_settings() -> void:
 	buttons.add_theme_constant_override("separation", 16)
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(buttons)
-	var reset := _make_button("RESET KEYS", Color(0.55, 0.55, 0.62))
-	reset.pressed.connect(_reset_binds)
-	buttons.add_child(reset)
+	if not _is_mobile:
+		var reset := _make_button("RESET KEYS", Color(0.55, 0.55, 0.62))
+		reset.pressed.connect(_reset_binds)
+		buttons.add_child(reset)
 	var back := _make_button("BACK", LEAF)
 	back.pressed.connect(_back_from_settings)
 	buttons.add_child(back)
@@ -1275,7 +1627,8 @@ func _toggle_pause() -> void:
 		return
 	_paused = not _paused
 	get_tree().paused = _paused
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _paused else Input.MOUSE_MODE_CAPTURED
+	if not _is_mobile:  # no cursor to capture/free on a touchscreen
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _paused else Input.MOUSE_MODE_CAPTURED
 	if _pause == null:
 		_build_pause()
 	_pause.visible = _paused
@@ -1350,13 +1703,18 @@ func start_photo_mode() -> void:
 	set_in_game_hud_visible(false)
 	_photo = true
 	if _photo_hint == null:
-		_photo_hint = _make_label("PHOTO MODE   ·   WASD + MOUSE TO FLY   ·   [P] SNAP   ·   [ESC] MENU", 16, CREAM)
+		var hint := "PHOTO MODE   ·   DRAG TO ORBIT   ·   PINCH TO ZOOM   ·   SNAP / DONE BELOW" \
+				if _is_mobile \
+				else "PHOTO MODE   ·   WASD + MOUSE TO FLY   ·   [P] SNAP   ·   [ESC] MENU"
+		_photo_hint = _make_label(hint, 16, CREAM)
 		_photo_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 		_photo_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
 		_photo_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
 		_photo_hint.offset_top = -40
 		add_child(_photo_hint)
 	_photo_hint.visible = true
+	if _mobile_photo != null:
+		_mobile_photo.visible = true  # SNAP / DONE buttons (no keys on touch)
 	photo_enter_requested.emit()
 
 
@@ -1365,9 +1723,12 @@ func _photo_to_pause() -> void:
 	_photo = false
 	if _photo_hint != null:
 		_photo_hint.visible = false
+	if _mobile_photo != null:
+		_mobile_photo.visible = false
 	_paused = true
 	get_tree().paused = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not _is_mobile:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if _pause == null:
 		_build_pause()
 	_pause.visible = true
@@ -1377,19 +1738,27 @@ func _photo_to_pause() -> void:
 func _snap_photo() -> void:
 	if _photo_hint != null:
 		_photo_hint.visible = false
+	if _mobile_photo != null:
+		_mobile_photo.visible = false  # keep SNAP/DONE out of the captured frame
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	Sfx.play("tick", 1.3)
-	# Into the in-game gallery...
+	# Into the in-game gallery (works everywhere, incl. Android app storage)...
 	DirAccess.make_dir_recursive_absolute(GALLERY_DIR)
 	img.save_png(GALLERY_DIR.path_join("photo_%d.png" % int(Time.get_unix_time_from_system())))
-	# ...and exported to Pictures for sharing.
-	var pics := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
-	if pics.is_empty():
-		pics = OS.get_user_data_dir()
-	img.save_png(pics.path_join("PackMule_%d.png" % int(Time.get_unix_time_from_system())))
-	if _photo and _photo_hint != null:
-		_photo_hint.visible = true
+	# ...and, on desktop, also to the system Pictures folder for sharing. Android
+	# scoped storage blocks arbitrary Pictures writes, so there the in-game
+	# Gallery is the share point (no error spam from a forbidden path).
+	if not _is_mobile:
+		var pics := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
+		if pics.is_empty():
+			pics = OS.get_user_data_dir()
+		img.save_png(pics.path_join("PackMule_%d.png" % int(Time.get_unix_time_from_system())))
+	if _photo:
+		if _photo_hint != null:
+			_photo_hint.visible = true
+		if _mobile_photo != null:
+			_mobile_photo.visible = true
 
 
 ## Rebind capture runs in _input (before the GUI), so keys like Space and
@@ -1619,6 +1988,16 @@ func _build_postcard(image: Image, stats: Dictionary) -> void:
 func _on_save_pressed() -> void:
 	await RenderingServer.frame_post_draw
 	var img := _pc_vp.get_texture().get_image()
+	# On mobile the system Pictures folder is off-limits (Android scoped
+	# storage), so save into the in-game Gallery (browsable from the menu).
+	if _is_mobile:
+		DirAccess.make_dir_recursive_absolute(GALLERY_DIR)
+		var gpath := GALLERY_DIR.path_join("PackMule_%d.png" % int(Time.get_unix_time_from_system()))
+		var gerr := img.save_png(gpath)
+		_saved_label.text = "SAVED TO YOUR GALLERY!" if gerr == OK \
+				else "COULD NOT SAVE (error %d)" % gerr
+		_saved_label.visible = true
+		return
 	var dir := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
 	if dir.is_empty():
 		dir = OS.get_user_data_dir()
@@ -1644,14 +2023,18 @@ func _make_label(text: String, size: int, color: Color) -> Label:
 func _make_button(text: String, color: Color) -> Button:
 	var btn := Button.new()
 	btn.text = text
-	btn.add_theme_font_size_override("font_size", 28)
+	# Bigger text and padding on a touchscreen so every button is an easy target.
+	var fsize := 34 if _is_mobile else 28
+	var px := 32 if _is_mobile else 26
+	var py := 20 if _is_mobile else 14
+	btn.add_theme_font_size_override("font_size", fsize)
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_disabled_color"]:
 		btn.add_theme_color_override(c, INK)
-	btn.add_theme_stylebox_override("normal", _rounded(color, 18, color.darkened(0.3), 26, 14, 5))
-	btn.add_theme_stylebox_override("hover", _rounded(color.lightened(0.12), 18, color.darkened(0.3), 26, 14, 6))
-	btn.add_theme_stylebox_override("pressed", _rounded(color.darkened(0.12), 18, color.darkened(0.3), 26, 14, 2))
-	btn.add_theme_stylebox_override("disabled", _rounded(color.darkened(0.08), 18, color.darkened(0.3), 26, 14, 3))
-	btn.add_theme_stylebox_override("focus", _rounded(Color(0, 0, 0, 0), 18, CREAM, 26, 14))
+	btn.add_theme_stylebox_override("normal", _rounded(color, 18, color.darkened(0.3), px, py, 5))
+	btn.add_theme_stylebox_override("hover", _rounded(color.lightened(0.12), 18, color.darkened(0.3), px, py, 6))
+	btn.add_theme_stylebox_override("pressed", _rounded(color.darkened(0.12), 18, color.darkened(0.3), px, py, 2))
+	btn.add_theme_stylebox_override("disabled", _rounded(color.darkened(0.08), 18, color.darkened(0.3), px, py, 3))
+	btn.add_theme_stylebox_override("focus", _rounded(Color(0, 0, 0, 0), 18, CREAM, px, py))
 	return btn
 
 
