@@ -458,12 +458,10 @@ func _build_mobile_controls() -> void:
 	_mobile_controls.add_child(right_row)
 	# Curved (rotation) arrows so it's clear these spin the OBJECT, not move you.
 	var rot_l := _icon_button(SKY, "spin_ccw")
-	rot_l.button_down.connect(func() -> void: _rot_dir = 1.0)
-	rot_l.button_up.connect(func() -> void: _rot_dir = 0.0)
+	_hold_button(rot_l, 1.0, func(v: float) -> void: _rot_dir = v)
 	right_row.add_child(rot_l)
 	var rot_r := _icon_button(SKY, "spin_cw")
-	rot_r.button_down.connect(func() -> void: _rot_dir = -1.0)
-	rot_r.button_up.connect(func() -> void: _rot_dir = 0.0)
+	_hold_button(rot_r, -1.0, func(v: float) -> void: _rot_dir = v)
 	right_row.add_child(rot_r)
 	var tip := _round_touch_button("TIP", TANGERINE)
 	tip.pressed.connect(func() -> void: tip_requested.emit())
@@ -529,12 +527,10 @@ func _build_mobile_controls() -> void:
 	vert_col.offset_bottom = -78
 	_mobile_controls.add_child(vert_col)
 	var up_btn := _icon_button(Color(0.5, 0.6, 0.78), "up")
-	up_btn.button_down.connect(func() -> void: _vert_dir = 1.0)
-	up_btn.button_up.connect(func() -> void: _vert_dir = 0.0)
+	_hold_button(up_btn, 1.0, func(v: float) -> void: _vert_dir = v)
 	vert_col.add_child(up_btn)
 	var down_btn := _icon_button(Color(0.5, 0.6, 0.78), "down")
-	down_btn.button_down.connect(func() -> void: _vert_dir = -1.0)
-	down_btn.button_up.connect(func() -> void: _vert_dir = 0.0)
+	_hold_button(down_btn, -1.0, func(v: float) -> void: _vert_dir = v)
 	vert_col.add_child(down_btn)
 
 	# Photo-mode overlay (separate, since the cluster above is hidden in photo
@@ -575,6 +571,33 @@ func _round_touch_button(text: String, color: Color) -> Button:
 ## A chunky square button whose face is a vector icon (no font glyphs, so it
 ## renders identically everywhere). `kind`: spin_ccw / spin_cw (curved rotation
 ## arrows) or up / down (movement triangles).
+## Wires a chunky button as a *held* control driven by raw touch, so it keeps
+## working while another finger is already dragging to look around. (BaseButton's
+## button_down/up fire from the emulated mouse, and Godot emulates the mouse from
+## only the first active touch — so a second finger on the button would otherwise
+## do nothing.) `on_change` is called with `value` on press and 0.0 on release.
+func _hold_button(btn: Button, value: float, on_change: Callable) -> void:
+	var finger := [-1]  # boxed so the closure can mutate it (-2 = mouse, desktop test)
+	btn.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventScreenTouch:
+			var t := event as InputEventScreenTouch
+			if t.pressed and finger[0] == -1:
+				finger[0] = t.index
+				on_change.call(value)
+			elif not t.pressed and t.index == finger[0]:
+				finger[0] = -1
+				on_change.call(0.0)
+		elif not DisplayServer.is_touchscreen_available() and event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.button_index == MOUSE_BUTTON_LEFT:
+				if mb.pressed and finger[0] == -1:
+					finger[0] = -2
+					on_change.call(value)
+				elif not mb.pressed and finger[0] == -2:
+					finger[0] = -1
+					on_change.call(0.0))
+
+
 func _icon_button(color: Color, kind: String) -> Button:
 	var btn := _make_button("", color)
 	btn.custom_minimum_size = Vector2(96, 96)
