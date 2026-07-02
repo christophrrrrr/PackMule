@@ -26,8 +26,8 @@ window/handheld/orientation="landscape"
 
 [gui]
 
-theme/custom_font="res://assets/LuckiestGuy-Regular.ttf"
 common/default_scroll_deadzone=10
+theme/custom_font="res://assets/LuckiestGuy-Regular.ttf"
 
 [physics]
 
@@ -37,4 +37,5 @@ common/physics_ticks_per_second=120
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
